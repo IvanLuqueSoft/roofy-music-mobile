@@ -34,19 +34,19 @@ jobs:
             exit 0
           fi
 
+          # Always export the current version so workflow_dispatch has it
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+
           if git show HEAD^:app/build.gradle.kts > /dev/null 2>&1; then
             OLD_VERSION=$(git show HEAD^:app/build.gradle.kts | grep -oP 'versionName\s*=\s*"\K[^"]+' || echo "")
             if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
               echo "version_changed=true" >> $GITHUB_OUTPUT
-              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-              echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
             else
               echo "version_changed=false" >> $GITHUB_OUTPUT
             fi
           else
             echo "version_changed=true" >> $GITHUB_OUTPUT
-            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           fi
 
   build:
