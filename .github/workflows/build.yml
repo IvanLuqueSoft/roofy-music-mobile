@@ -1,0 +1,89 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "README.md"
+      - "fastlane/**"
+      - "assets/**"
+      - ".github/**/*.md"
+      - ".github/FUNDING.yml"
+      - ".github/ISSUE_TEMPLATE/**"
+
+permissions:
+  contents: write
+  discussions: write
+
+jobs:
+  build:
+    name: Build FOSS Release
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_KEY }}
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build FOSS Release APK
+        run: ./gradlew --console=plain assembleFossRelease --warning-mode summary
+        env:
+          ROOFY_MUSIC_APPLICATION_ID: com.metrolist.music
+          ROOFY_MUSIC_APP_NAME: Roofy Music Nightly
+          PULL_REQUEST: "false"
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+
+      - name: Check signing secrets
+        id: signing
+        run: |
+          if [ -n "${{ secrets.KEYSTORE }}" ] && [ -n "${{ secrets.KEY_ALIAS }}" ] && [ -n "${{ secrets.KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.KEY_PASSWORD }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign APK
+        if: steps.signing.outputs.available == 'true'
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: app/build/outputs/apk/foss/release/
+          signingKey: ${{ secrets.KEYSTORE }}
+          keyAlias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          buildToolsVersion: 35.0.0
+
+      - name: Move APK
+        run: |
+          OUTPUT_DIR="app/build/outputs/apk/foss/release"
+          mkdir -p "$OUTPUT_DIR/out"
+          if [ "${{ steps.signing.outputs.available }}" == "true" ]; then
+            find "$OUTPUT_DIR" -maxdepth 1 \( -name "*-signed.apk" -o -name "*-unsigned-signed.apk" \) -exec mv {} "$OUTPUT_DIR/out/app-universal-release.apk" \;
+          else
+            find "$OUTPUT_DIR" -maxdepth 1 -name "*.apk" -exec mv {} "$OUTPUT_DIR/out/app-universal-release.apk" \;
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-release
+          path: app/build/outputs/apk/foss/release/out/*
