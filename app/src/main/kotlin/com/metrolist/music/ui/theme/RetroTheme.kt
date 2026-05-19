@@ -464,7 +464,7 @@ fun RetroListItem(
 fun RetroGridItem(
     title: String,
     subtitle: String? = null,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
@@ -478,10 +478,14 @@ fun RetroGridItem(
                 if (selected) RetroTokens.ActiveMuted else RetroTokens.Border,
                 RoundedCornerShape(RetroTokens.Radius),
             )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    )
+                } else Modifier
             ),
     ) {
         Box(

@@ -130,7 +130,7 @@ fun BrowseScreen(
                     RetroGridItem(
                         title = item.title,
                         subtitle = subtitle,
-                        onClick = {},
+                        onClick = null,
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         RetroArtwork(modifier = Modifier.fillMaxSize()) {
