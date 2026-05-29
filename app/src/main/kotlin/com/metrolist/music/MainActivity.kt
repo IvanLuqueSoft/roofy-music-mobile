@@ -134,6 +134,8 @@ import com.metrolist.music.constants.CheckForUpdatesKey
 import com.metrolist.music.constants.DarkModeKey
 import com.metrolist.music.constants.DefaultOpenTabKey
 import com.metrolist.music.constants.DisableScreenshotKey
+import com.metrolist.music.constants.DesktopImportEndpointUrlKey
+import com.metrolist.music.constants.DesktopImportTokenKey
 import com.metrolist.music.constants.DynamicThemeKey
 import com.metrolist.music.constants.EnableHighRefreshRateKey
 import com.metrolist.music.constants.ExperimentalLyricsKey
@@ -1517,6 +1519,7 @@ class MainActivity : ComponentActivity() {
         val coroutineScope = lifecycle.coroutineScope
 
         if (handlePersonalLibraryPairing(uri, navController)) return
+        if (handleDesktopImportPairing(uri, navController)) return
 
         val listenCode =
             uri.getQueryParameter("code")
@@ -1650,6 +1653,43 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, R.string.personal_library_paired, Toast.LENGTH_SHORT).show()
                 navController.navigate("settings/integrations/personal_library") {
+                    launchSingleTop = true
+                }
+            }
+        }
+
+        return true
+    }
+
+    private fun handleDesktopImportPairing(
+        uri: android.net.Uri,
+        navController: NavHostController,
+    ): Boolean {
+        val isPairingLink =
+            uri.scheme.equals("roofymusic", ignoreCase = true) &&
+                uri.host.equals("pair", ignoreCase = true) &&
+                uri.pathSegments.firstOrNull().equals("import", ignoreCase = true)
+        if (!isPairingLink) return false
+
+        val endpointUrl = uri.getQueryParameter("endpointUrl")?.trim().orEmpty()
+        val token = uri.getQueryParameter("token").orEmpty()
+
+        if (endpointUrl.isBlank() || token.isBlank()) {
+            Toast.makeText(this, R.string.desktop_import_pairing_invalid, Toast.LENGTH_LONG).show()
+            navController.navigate("settings/integrations/desktop_import") {
+                launchSingleTop = true
+            }
+            return true
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            dataStore.edit { settings ->
+                settings[DesktopImportEndpointUrlKey] = endpointUrl
+                settings[DesktopImportTokenKey] = token
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, R.string.desktop_import_paired, Toast.LENGTH_SHORT).show()
+                navController.navigate("settings/integrations/desktop_import") {
                     launchSingleTop = true
                 }
             }

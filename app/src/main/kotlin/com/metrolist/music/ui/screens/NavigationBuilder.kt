@@ -59,6 +59,7 @@ import com.metrolist.music.ui.screens.settings.StorageSettings
 import com.metrolist.music.ui.screens.settings.ThemeScreen
 import com.metrolist.music.ui.screens.settings.UpdaterScreen
 import com.metrolist.music.ui.screens.settings.integrations.DiscordSettings
+import com.metrolist.music.ui.screens.settings.integrations.DesktopImportSettings
 import com.metrolist.music.ui.screens.settings.integrations.IntegrationScreen
 import com.metrolist.music.ui.screens.settings.integrations.LastFMSettings
 import com.metrolist.music.ui.screens.settings.integrations.ListenTogetherSettings
@@ -403,6 +404,10 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable("settings/integrations/personal_library") {
         PersonalLibrarySettings(navController)
+    }
+
+    composable("settings/integrations/desktop_import") {
+        DesktopImportSettings(navController)
     }
 
     composable(route = "settings/integrations/listen_together") {

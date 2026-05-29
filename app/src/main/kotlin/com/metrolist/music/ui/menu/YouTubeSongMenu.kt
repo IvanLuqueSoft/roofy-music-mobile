@@ -9,6 +9,7 @@ package com.metrolist.music.ui.menu
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,10 @@ import com.metrolist.music.R
 import com.metrolist.music.constants.ListItemHeight
 import com.metrolist.music.constants.ListThumbnailSize
 import com.metrolist.music.constants.ThumbnailCornerRadius
+import com.metrolist.music.constants.DesktopImportEndpointUrlKey
+import com.metrolist.music.constants.DesktopImportTokenKey
+import com.metrolist.music.desktopimport.DesktopImportClient
+import com.metrolist.music.desktopimport.DesktopImportTrack
 import com.metrolist.music.db.entities.SpeedDialItem
 import com.metrolist.music.db.entities.SongEntity
 import com.metrolist.music.extensions.toMediaItem
@@ -86,6 +91,7 @@ import com.metrolist.music.ui.utils.ShowMediaInfo
 import com.metrolist.music.ui.utils.resize
 import com.metrolist.music.utils.joinByBullet
 import com.metrolist.music.utils.makeTimeString
+import com.metrolist.music.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -110,6 +116,8 @@ fun YouTubeSongMenu(
     val syncUtils = LocalSyncUtils.current
     val listenTogetherManager = LocalListenTogetherManager.current
     val isPinned by database.speedDialDao.isPinned(song.id).collectAsStateWithLifecycle(initialValue = false)
+    val desktopImportEndpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
+    val desktopImportToken by rememberPreference(DesktopImportTokenKey, "")
     val artists = remember {
         song.artists.mapNotNull {
             it.id?.let { artistId ->
@@ -281,6 +289,9 @@ fun YouTubeSongMenu(
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
+    val desktopImportQueuedText = stringResource(R.string.desktop_import_queued)
+    val desktopImportFailedText = stringResource(R.string.desktop_import_failed)
+    val desktopImportNotConfiguredText = stringResource(R.string.desktop_import_not_configured)
 
     LazyColumn(
         contentPadding = PaddingValues(
@@ -521,6 +532,63 @@ fun YouTubeSongMenu(
                                     }
                                 }
                                 onDismiss()
+                            }
+                        )
+                    )
+                    add(
+                        Material3MenuItemData(
+                            title = { Text(text = stringResource(R.string.add_to_my_library)) },
+                            description = { Text(text = stringResource(R.string.add_to_my_library_desc)) },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.upload),
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                if (desktopImportEndpointUrl.isBlank() || desktopImportToken.isBlank()) {
+                                    Toast
+                                        .makeText(context, desktopImportNotConfiguredText, Toast.LENGTH_SHORT)
+                                        .show()
+                                    navController.navigate("settings/integrations/desktop_import")
+                                    onDismiss()
+                                } else {
+                                    coroutineScope.launch {
+                                        val trackUrl =
+                                            song.shareLink.ifBlank {
+                                                "https://music.youtube.com/watch?v=${song.id}"
+                                            }
+                                        DesktopImportClient
+                                            .sendImport(
+                                                endpointUrl = desktopImportEndpointUrl,
+                                                token = desktopImportToken,
+                                                track =
+                                                    DesktopImportTrack(
+                                                        artist = song.artists.firstOrNull()?.name,
+                                                        artists = song.artists.map { it.name },
+                                                        thumbnailUrl = song.thumbnail,
+                                                        title = song.title,
+                                                        url = trackUrl,
+                                                        videoId = song.id,
+                                                    ),
+                                            )
+                                            .onSuccess {
+                                                Toast
+                                                    .makeText(context, desktopImportQueuedText, Toast.LENGTH_SHORT)
+                                                    .show()
+                                            }
+                                            .onFailure {
+                                                Toast
+                                                    .makeText(
+                                                        context,
+                                                        "$desktopImportFailedText: ${it.message}",
+                                                        Toast.LENGTH_LONG,
+                                                    )
+                                                    .show()
+                                            }
+                                    }
+                                    onDismiss()
+                                }
                             }
                         )
                     )

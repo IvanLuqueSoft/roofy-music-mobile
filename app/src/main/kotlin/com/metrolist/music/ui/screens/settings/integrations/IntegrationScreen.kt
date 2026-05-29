@@ -63,6 +63,14 @@ fun IntegrationScreen(
                     onClick = {
                         navController.navigate("settings/integrations/personal_library")
                     }
+                ),
+                IntegrationCardItem(
+                    icon = painterResource(R.drawable.upload),
+                    title = { Text(stringResource(R.string.desktop_import)) },
+                    description = { Text(stringResource(R.string.desktop_import_integration_desc)) },
+                    onClick = {
+                        navController.navigate("settings/integrations/desktop_import")
+                    }
                 )
             )
         )
