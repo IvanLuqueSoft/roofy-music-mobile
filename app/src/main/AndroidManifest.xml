@@ -89,6 +89,18 @@
                 <data android:pathPrefix="/listen" />
             </intent-filter>
 
+            <!-- Roofy desktop Personal Library pairing link -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="roofymusic" />
+                <data android:host="pair" />
+                <data android:pathPrefix="/subsonic" />
+            </intent-filter>
+
             <!-- Youtube filter -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

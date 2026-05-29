@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
@@ -146,6 +147,10 @@ import com.metrolist.music.constants.NavigationBarAnimationSpec
 import com.metrolist.music.constants.NavigationBarHeight
 import com.metrolist.music.constants.PauseListenHistoryKey
 import com.metrolist.music.constants.PauseSearchHistoryKey
+import com.metrolist.music.constants.PersonalLibraryEnabledKey
+import com.metrolist.music.constants.PersonalLibraryPasswordKey
+import com.metrolist.music.constants.PersonalLibraryServerUrlKey
+import com.metrolist.music.constants.PersonalLibraryUsernameKey
 import com.metrolist.music.constants.PreferredLyricsProvider
 import com.metrolist.music.constants.PreferredLyricsProviderKey
 import com.metrolist.music.constants.PureBlackKey
@@ -1511,6 +1516,8 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra(Intent.EXTRA_TEXT)
         val coroutineScope = lifecycle.coroutineScope
 
+        if (handlePersonalLibraryPairing(uri, navController)) return
+
         val listenCode =
             uri.getQueryParameter("code")
                 ?: uri.getQueryParameter("room")
@@ -1609,6 +1616,46 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun handlePersonalLibraryPairing(
+        uri: android.net.Uri,
+        navController: NavHostController,
+    ): Boolean {
+        val isPairingLink =
+            uri.scheme.equals("roofymusic", ignoreCase = true) &&
+                uri.host.equals("pair", ignoreCase = true) &&
+                uri.pathSegments.firstOrNull().equals("subsonic", ignoreCase = true)
+        if (!isPairingLink) return false
+
+        val serverUrl = uri.getQueryParameter("serverUrl")?.trim().orEmpty()
+        val username = uri.getQueryParameter("username")?.trim().orEmpty()
+        val password = uri.getQueryParameter("password").orEmpty()
+
+        if (serverUrl.isBlank() || username.isBlank() || password.isBlank()) {
+            Toast.makeText(this, R.string.personal_library_pairing_invalid, Toast.LENGTH_LONG).show()
+            navController.navigate("settings/integrations/personal_library") {
+                launchSingleTop = true
+            }
+            return true
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            dataStore.edit { settings ->
+                settings[PersonalLibraryEnabledKey] = true
+                settings[PersonalLibraryServerUrlKey] = serverUrl
+                settings[PersonalLibraryUsernameKey] = username
+                settings[PersonalLibraryPasswordKey] = password
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, R.string.personal_library_paired, Toast.LENGTH_SHORT).show()
+                navController.navigate("settings/integrations/personal_library") {
+                    launchSingleTop = true
+                }
+            }
+        }
+
+        return true
     }
 
     @SuppressLint("ObsoleteSdkInt")

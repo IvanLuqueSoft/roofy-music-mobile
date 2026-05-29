@@ -684,6 +684,8 @@
     <string name="personal_library_search_hint">Song, album, or artist</string>
     <string name="personal_library_search_button">Search</string>
     <string name="personal_library_searching">Searching...</string>
+    <string name="personal_library_paired">Personal Library paired</string>
+    <string name="personal_library_pairing_invalid">Pairing link is missing server credentials</string>
     <string name="resync">Re-sync</string>
     <string name="copy_code">Copy code</string>
     <string name="kick_user_desc">Remove this person from the session</string>
