@@ -670,6 +670,14 @@ interface DatabaseDao {
     @Query("SELECT * FROM playlist WHERE browseId LIKE 'subsonic:playlist:%' OR browseId LIKE 'subsonic:pending:%'")
     fun subsonicManagedPlaylists(): List<PlaylistEntity>
 
+    @Query(
+        "SELECT * FROM event WHERE songId LIKE 'subsonic:%' AND timestamp > :since ORDER BY timestamp ASC LIMIT :limit",
+    )
+    fun subsonicEventsSince(
+        since: java.time.LocalDateTime,
+        limit: Int,
+    ): List<Event>
+
 
     @Transaction
     @Query("SELECT * FROM song_artist_map WHERE songId = :songId")

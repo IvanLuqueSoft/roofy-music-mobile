@@ -11,13 +11,21 @@ import com.metrolist.music.db.entities.PlaylistEntity
 import com.metrolist.music.db.entities.PlaylistSongMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 data class PersonalLibraryPlaylistSyncResult(
     val importedPlaylists: Int,
     val updatedPlaylists: Int,
     val pushedPlaylists: Int,
     val remotePlaylists: Int,
+)
+
+data class PersonalLibraryHistorySyncResult(
+    val pushedScrobbles: Int,
+    val skippedEvents: Int,
+    val lastSyncedEpochMs: Long,
 )
 
 data class PersonalLibraryFavoriteSyncResult(
@@ -202,6 +210,72 @@ object PersonalLibrarySync {
                 updatedPlaylists = updated,
                 pushedPlaylists = pushed,
                 remotePlaylists = remotePlaylists.size,
+            )
+        }
+
+    suspend fun syncPlayHistory(
+        database: MusicDatabase,
+        client: SubsonicClient,
+        lastSyncedEpochMs: Long,
+    ): PersonalLibraryHistorySyncResult =
+        withContext(Dispatchers.IO) {
+            val since =
+                Instant
+                    .ofEpochMilli(lastSyncedEpochMs.coerceAtLeast(0))
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime()
+            val events = database.subsonicEventsSince(since, limit = 250)
+            var pushed = 0
+            var skipped = 0
+            var latestEpoch = lastSyncedEpochMs
+
+            events.forEach { event ->
+                val rawId = SubsonicClient.localIdFromMediaId(event.songId)
+                if (rawId == null) {
+                    skipped += 1
+                    return@forEach
+                }
+
+                val eventEpoch =
+                    event.timestamp
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                if (eventEpoch <= lastSyncedEpochMs) {
+                    skipped += 1
+                    return@forEach
+                }
+
+                runCatching {
+                    client.scrobble(rawId, eventEpoch)
+                }.onSuccess {
+                    pushed += 1
+                    if (eventEpoch > latestEpoch) {
+                        latestEpoch = eventEpoch
+                    }
+                }.onFailure {
+                    skipped += 1
+                }
+            }
+
+            if (pushed == 0 && events.isNotEmpty()) {
+                latestEpoch =
+                    events
+                        .maxOf {
+                            it.timestamp
+                                .atZone(ZoneId.systemDefault())
+                                .toInstant()
+                                .toEpochMilli()
+                        }
+                        .coerceAtLeast(lastSyncedEpochMs)
+            } else if (pushed > 0) {
+                latestEpoch = latestEpoch.coerceAtLeast(System.currentTimeMillis())
+            }
+
+            PersonalLibraryHistorySyncResult(
+                pushedScrobbles = pushed,
+                skippedEvents = skipped,
+                lastSyncedEpochMs = latestEpoch,
             )
         }
 }

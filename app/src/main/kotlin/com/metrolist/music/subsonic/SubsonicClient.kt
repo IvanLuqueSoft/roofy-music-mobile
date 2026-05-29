@@ -89,6 +89,25 @@ class SubsonicClient(
             songIdsToAdd.forEach { parameters.append("songIdToAdd", it) }
         }.response.ensureOk()
 
+    suspend fun setRating(
+        id: String,
+        rating: Int,
+    ): SubsonicResponse =
+        request("setRating.view") {
+            parameters.append("id", id)
+            parameters.append("rating", rating.coerceIn(0, 5).toString())
+        }.response.ensureOk()
+
+    suspend fun scrobble(
+        id: String,
+        timeMs: Long,
+    ): SubsonicResponse =
+        request("scrobble.view") {
+            parameters.append("id", id)
+            parameters.append("time", timeMs.toString())
+            parameters.append("submission", "true")
+        }.response.ensureOk()
+
     fun streamUrl(id: String): String =
         endpoint("stream.view") {
             parameters.append("id", id)

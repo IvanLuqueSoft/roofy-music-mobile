@@ -47,6 +47,7 @@ import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
 import com.metrolist.music.constants.PersonalLibraryEnabledKey
+import com.metrolist.music.constants.PersonalLibraryHistorySyncEpochMsKey
 import com.metrolist.music.constants.PersonalLibraryPasswordKey
 import com.metrolist.music.constants.PersonalLibraryServerUrlKey
 import com.metrolist.music.constants.PersonalLibraryUsernameKey
@@ -87,6 +88,9 @@ fun PersonalLibrarySettings(
     var favoriteSyncSummary by rememberSaveable { mutableStateOf("") }
     var syncingPlaylists by rememberSaveable { mutableStateOf(false) }
     var playlistSyncSummary by rememberSaveable { mutableStateOf("") }
+    var syncingHistory by rememberSaveable { mutableStateOf(false) }
+    var historySyncSummary by rememberSaveable { mutableStateOf("") }
+    var historySyncEpochMs by rememberPreference(PersonalLibraryHistorySyncEpochMsKey, 0L)
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<SubsonicSong>()) }
@@ -324,6 +328,68 @@ fun PersonalLibrarySettings(
                 if (playlistSyncSummary.isNotBlank()) {
                     Text(
                         text = playlistSyncSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.personal_library_sync_history_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                RetroButton(
+                    enabled = !syncingHistory && serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+                    onClick = {
+                        syncingHistory = true
+                        historySyncSummary = ""
+                        coroutineScope.launch {
+                            val client = SubsonicClient(
+                                PersonalLibraryCredentials(
+                                    serverUrl = serverUrl,
+                                    username = username,
+                                    password = password,
+                                )
+                            )
+                            val result = runCatching {
+                                PersonalLibrarySync.syncPlayHistory(
+                                    database = database,
+                                    client = client,
+                                    lastSyncedEpochMs = historySyncEpochMs,
+                                )
+                            }
+
+                            syncingHistory = false
+                            result
+                                .onSuccess {
+                                    historySyncEpochMs = it.lastSyncedEpochMs
+                                    historySyncSummary = context.getString(
+                                        R.string.personal_library_sync_history_summary,
+                                        it.pushedScrobbles,
+                                        it.skippedEvents,
+                                    )
+                                }
+                                .onFailure {
+                                    Toast
+                                        .makeText(context, "$failedPrefix: ${it.message}", Toast.LENGTH_LONG)
+                                        .show()
+                                }
+                        }
+                    },
+                ) {
+                    Text(
+                        if (syncingHistory) {
+                            stringResource(R.string.personal_library_syncing)
+                        } else {
+                            stringResource(R.string.personal_library_sync_history)
+                        }
+                    )
+                }
+
+                if (historySyncSummary.isNotBlank()) {
+                    Text(
+                        text = historySyncSummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

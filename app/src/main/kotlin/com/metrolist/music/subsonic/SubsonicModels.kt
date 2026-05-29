@@ -96,6 +96,9 @@ data class SubsonicSong(
     val suffix: String? = null,
     val path: String? = null,
     val starred: String? = null,
+    val userRating: Int? = null,
+    val playCount: Int? = null,
+    val lastPlayed: String? = null,
 )
 
 @Serializable

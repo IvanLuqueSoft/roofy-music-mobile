@@ -172,6 +172,7 @@ fun PlayerMenu(
     var handoffInProgress by rememberSaveable { mutableStateOf(false) }
     val roofyConnectSuccessText = stringResource(R.string.roofy_connect_success)
     val roofyConnectFailedText = stringResource(R.string.roofy_connect_failed)
+    val roofyConnectSentText = stringResource(R.string.roofy_connect_sent_to_desktop)
 
     val listenTogetherManager = LocalListenTogetherManager.current
     val listenTogetherRoleState = listenTogetherManager?.role?.collectAsStateWithLifecycle(initialValue = com.metrolist.music.listentogether.RoomRole.NONE)
@@ -644,6 +645,54 @@ fun PlayerMenu(
                 items =
                     buildList {
                         if (desktopImportEndpointUrl.isNotBlank() && desktopImportToken.isNotBlank()) {
+                            add(
+                                Material3MenuItemData(
+                                    title = { Text(text = stringResource(R.string.roofy_connect_continue_on_desktop)) },
+                                    description = {
+                                        Text(text = stringResource(R.string.roofy_connect_continue_on_desktop_desc))
+                                    },
+                                    icon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.sync),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        if (handoffInProgress) return@Material3MenuItemData
+                                        handoffInProgress = true
+                                        coroutineScope.launch {
+                                            val result =
+                                                runCatching {
+                                                    HandoffPlayback.continueOnDesktop(
+                                                        playerConnection = playerConnection,
+                                                        endpointUrl = desktopImportEndpointUrl,
+                                                        token = desktopImportToken,
+                                                    )
+                                                }
+                                            handoffInProgress = false
+                                            result
+                                                .onSuccess {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            roofyConnectSentText,
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                    onDismiss()
+                                                }
+                                                .onFailure {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            "$roofyConnectFailedText: ${it.message}",
+                                                            Toast.LENGTH_LONG,
+                                                        ).show()
+                                                }
+                                        }
+                                    },
+                                ),
+                            )
                             add(
                                 Material3MenuItemData(
                                     title = { Text(text = stringResource(R.string.roofy_connect_continue_on_phone)) },
