@@ -18,6 +18,7 @@ import com.metrolist.music.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.CoroutineScope
@@ -196,7 +197,8 @@ object AppUpdateManager {
                 throw IllegalStateException("HTTP ${response.status.value}")
             }
 
-            val totalBytes = response.contentLength() ?: -1L
+            val totalBytes =
+                response.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: -1L
             var bytesDownloaded = 0L
 
             FileOutputStream(apkFile).use { output ->
