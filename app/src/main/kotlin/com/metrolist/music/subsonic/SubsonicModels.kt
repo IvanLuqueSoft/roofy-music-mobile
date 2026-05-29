@@ -26,6 +26,7 @@ data class SubsonicResponse(
     val error: SubsonicError? = null,
     val searchResult3: SubsonicSearchResult? = null,
     val song: SubsonicSong? = null,
+    val starred2: SubsonicStarred = SubsonicStarred(),
 )
 
 @Serializable
@@ -36,6 +37,13 @@ data class SubsonicError(
 
 @Serializable
 data class SubsonicSearchResult(
+    val song: List<SubsonicSong> = emptyList(),
+    val album: List<SubsonicAlbum> = emptyList(),
+    val artist: List<SubsonicArtist> = emptyList(),
+)
+
+@Serializable
+data class SubsonicStarred(
     val song: List<SubsonicSong> = emptyList(),
     val album: List<SubsonicAlbum> = emptyList(),
     val artist: List<SubsonicArtist> = emptyList(),

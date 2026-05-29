@@ -29,6 +29,7 @@ fun SubsonicSong.toRoofyMetadata(client: SubsonicClient): MediaMetadata =
                 title = album.orEmpty(),
             )
         },
+        liked = starred != null,
     )
 
 fun SubsonicSong.toMediaItem(client: SubsonicClient): MediaItem {

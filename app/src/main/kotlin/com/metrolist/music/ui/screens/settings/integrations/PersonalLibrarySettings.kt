@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
@@ -50,6 +51,7 @@ import com.metrolist.music.constants.PersonalLibraryPasswordKey
 import com.metrolist.music.constants.PersonalLibraryServerUrlKey
 import com.metrolist.music.constants.PersonalLibraryUsernameKey
 import com.metrolist.music.subsonic.PersonalLibraryCredentials
+import com.metrolist.music.subsonic.PersonalLibrarySync
 import com.metrolist.music.subsonic.SubsonicClient
 import com.metrolist.music.subsonic.SubsonicSong
 import com.metrolist.music.subsonic.toMediaItem
@@ -72,6 +74,7 @@ fun PersonalLibrarySettings(
     navController: NavController,
 ) {
     val context = LocalContext.current
+    val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -80,6 +83,8 @@ fun PersonalLibrarySettings(
     var username by rememberPreference(PersonalLibraryUsernameKey, "")
     var password by rememberPreference(PersonalLibraryPasswordKey, "")
     var testing by rememberSaveable { mutableStateOf(false) }
+    var syncingFavorites by rememberSaveable { mutableStateOf(false) }
+    var favoriteSyncSummary by rememberSaveable { mutableStateOf("") }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<SubsonicSong>()) }
@@ -190,6 +195,76 @@ fun PersonalLibrarySettings(
                         } else {
                             stringResource(R.string.personal_library_test_connection)
                         }
+                    )
+                }
+            }
+        }
+
+        RetroSurface(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.personal_library_sync_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.personal_library_sync_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                RetroButton(
+                    enabled = !syncingFavorites && serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+                    onClick = {
+                        syncingFavorites = true
+                        favoriteSyncSummary = ""
+                        coroutineScope.launch {
+                            val client = SubsonicClient(
+                                PersonalLibraryCredentials(
+                                    serverUrl = serverUrl,
+                                    username = username,
+                                    password = password,
+                                )
+                            )
+                            val result = runCatching {
+                                PersonalLibrarySync.syncFavorites(database, client)
+                            }
+
+                            syncingFavorites = false
+                            result
+                                .onSuccess {
+                                    favoriteSyncSummary = context.getString(
+                                        R.string.personal_library_sync_summary,
+                                        it.remoteFavorites,
+                                        it.importedFavorites,
+                                        it.updatedFavorites,
+                                        it.pushedFavorites,
+                                    )
+                                }
+                                .onFailure {
+                                    Toast
+                                        .makeText(context, "$failedPrefix: ${it.message}", Toast.LENGTH_LONG)
+                                        .show()
+                                }
+                        }
+                    },
+                ) {
+                    Text(
+                        if (syncingFavorites) {
+                            stringResource(R.string.personal_library_syncing)
+                        } else {
+                            stringResource(R.string.personal_library_sync_favorites)
+                        }
+                    )
+                }
+
+                if (favoriteSyncSummary.isNotBlank()) {
+                    Text(
+                        text = favoriteSyncSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

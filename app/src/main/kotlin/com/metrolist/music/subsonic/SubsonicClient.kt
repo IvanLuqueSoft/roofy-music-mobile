@@ -50,6 +50,19 @@ class SubsonicClient(
             parameters.append("id", id)
         }.response.ensureOk().song
 
+    suspend fun getStarred2(): SubsonicStarred =
+        request("getStarred2.view").response.ensureOk().starred2
+
+    suspend fun starSong(id: String): SubsonicResponse =
+        request("star.view") {
+            parameters.append("id", id)
+        }.response.ensureOk()
+
+    suspend fun unstarSong(id: String): SubsonicResponse =
+        request("unstar.view") {
+            parameters.append("id", id)
+        }.response.ensureOk()
+
     fun streamUrl(id: String): String =
         endpoint("stream.view") {
             parameters.append("id", id)

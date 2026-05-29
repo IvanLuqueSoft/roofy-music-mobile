@@ -686,6 +686,11 @@
     <string name="personal_library_searching">Searching...</string>
     <string name="personal_library_paired">Personal Library paired</string>
     <string name="personal_library_pairing_invalid">Pairing link is missing server credentials</string>
+    <string name="personal_library_sync_title">Sync favorites</string>
+    <string name="personal_library_sync_desc">Merge starred Navidrome songs with liked Personal Library songs saved on this phone.</string>
+    <string name="personal_library_sync_favorites">Sync favorites</string>
+    <string name="personal_library_syncing">Syncing...</string>
+    <string name="personal_library_sync_summary">Remote: %1$d, imported: %2$d, updated: %3$d, pushed: %4$d</string>
     <string name="desktop_import">Desktop import queue</string>
     <string name="desktop_import_integration_desc">Send mobile songs to the Roofy desktop import queue</string>
     <string name="desktop_import_settings_desc">Pair with Roofy desktop to send YouTube Music tracks from this phone into the desktop import queue.</string>
