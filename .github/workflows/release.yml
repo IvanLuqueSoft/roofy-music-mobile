@@ -50,9 +50,14 @@ jobs:
 
       - name: Commit version bump
         id: commit_version
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "$GIT_AUTHOR_NAME"
+          git config --local user.email "$GIT_AUTHOR_EMAIL"
           git add app/build.gradle.kts
           if git diff --staged --quiet; then
             echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -190,9 +195,7 @@ jobs:
             exit 0
           fi
 
-          git tag -a "$TAG" "$SHA" -m "Roofy Music $VERSION"
-          git push origin "$TAG"
-
+          # gh creates the tag on GitHub; no local git identity needed (unlike git tag -a).
           gh release create "$TAG" \
             --target "$SHA" \
             --title "Roofy Music $VERSION" \
