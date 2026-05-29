@@ -85,6 +85,8 @@ fun PersonalLibrarySettings(
     var testing by rememberSaveable { mutableStateOf(false) }
     var syncingFavorites by rememberSaveable { mutableStateOf(false) }
     var favoriteSyncSummary by rememberSaveable { mutableStateOf("") }
+    var syncingPlaylists by rememberSaveable { mutableStateOf(false) }
+    var playlistSyncSummary by rememberSaveable { mutableStateOf("") }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<SubsonicSong>()) }
@@ -263,6 +265,65 @@ fun PersonalLibrarySettings(
                 if (favoriteSyncSummary.isNotBlank()) {
                     Text(
                         text = favoriteSyncSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.personal_library_sync_playlists_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                RetroButton(
+                    enabled = !syncingPlaylists && serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+                    onClick = {
+                        syncingPlaylists = true
+                        playlistSyncSummary = ""
+                        coroutineScope.launch {
+                            val client = SubsonicClient(
+                                PersonalLibraryCredentials(
+                                    serverUrl = serverUrl,
+                                    username = username,
+                                    password = password,
+                                )
+                            )
+                            val result = runCatching {
+                                PersonalLibrarySync.syncPlaylists(database, client)
+                            }
+
+                            syncingPlaylists = false
+                            result
+                                .onSuccess {
+                                    playlistSyncSummary = context.getString(
+                                        R.string.personal_library_sync_playlists_summary,
+                                        it.remotePlaylists,
+                                        it.importedPlaylists,
+                                        it.updatedPlaylists,
+                                        it.pushedPlaylists,
+                                    )
+                                }
+                                .onFailure {
+                                    Toast
+                                        .makeText(context, "$failedPrefix: ${it.message}", Toast.LENGTH_LONG)
+                                        .show()
+                                }
+                        }
+                    },
+                ) {
+                    Text(
+                        if (syncingPlaylists) {
+                            stringResource(R.string.personal_library_syncing)
+                        } else {
+                            stringResource(R.string.personal_library_sync_playlists)
+                        }
+                    )
+                }
+
+                if (playlistSyncSummary.isNotBlank()) {
+                    Text(
+                        text = playlistSyncSummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

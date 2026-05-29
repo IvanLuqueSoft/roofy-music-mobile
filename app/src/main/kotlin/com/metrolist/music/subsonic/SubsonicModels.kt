@@ -10,6 +10,17 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 const val SUBSONIC_MEDIA_ID_PREFIX = "subsonic:"
+const val SUBSONIC_PLAYLIST_BROWSE_PREFIX = "subsonic:playlist:"
+const val SUBSONIC_PENDING_PLAYLIST_BROWSE_PREFIX = "subsonic:pending:"
+
+fun subsonicPlaylistLocalId(remoteId: String) = "PL_SUB_$remoteId"
+
+fun subsonicPlaylistBrowseId(remoteId: String) = "$SUBSONIC_PLAYLIST_BROWSE_PREFIX$remoteId"
+
+fun subsonicRemoteIdFromBrowseId(browseId: String?): String? =
+    browseId
+        ?.takeIf { it.startsWith(SUBSONIC_PLAYLIST_BROWSE_PREFIX) }
+        ?.removePrefix(SUBSONIC_PLAYLIST_BROWSE_PREFIX)
 
 @Serializable
 data class SubsonicEnvelope(
@@ -27,6 +38,26 @@ data class SubsonicResponse(
     val searchResult3: SubsonicSearchResult? = null,
     val song: SubsonicSong? = null,
     val starred2: SubsonicStarred = SubsonicStarred(),
+    val playlists: SubsonicPlaylists? = null,
+    val playlist: SubsonicPlaylist? = null,
+)
+
+@Serializable
+data class SubsonicPlaylists(
+    val playlist: List<SubsonicPlaylist> = emptyList(),
+)
+
+@Serializable
+data class SubsonicPlaylist(
+    val id: String,
+    val name: String,
+    val owner: String? = null,
+    val `public`: Boolean? = null,
+    val songCount: Int? = null,
+    val created: String? = null,
+    val changed: String? = null,
+    val coverArt: String? = null,
+    val entry: List<SubsonicSong> = emptyList(),
 )
 
 @Serializable

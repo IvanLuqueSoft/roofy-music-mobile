@@ -691,6 +691,15 @@
     <string name="personal_library_sync_favorites">Sync favorites</string>
     <string name="personal_library_syncing">Syncing...</string>
     <string name="personal_library_sync_summary">Remote: %1$d, imported: %2$d, updated: %3$d, pushed: %4$d</string>
+    <string name="personal_library_sync_playlists">Sync playlists</string>
+    <string name="personal_library_sync_playlists_desc">Import Navidrome playlists and push pending Personal Library playlists back to the server.</string>
+    <string name="personal_library_sync_playlists_summary">Remote: %1$d, imported: %2$d, updated: %3$d, pushed: %4$d</string>
+    <string name="roofy_connect_continue_on_phone">Continue on phone</string>
+    <string name="roofy_connect_continue_on_phone_desc">Pick up desktop playback on this device</string>
+    <string name="roofy_connect_fetching">Fetching desktop playback...</string>
+    <string name="roofy_connect_success">Playback transferred from desktop</string>
+    <string name="roofy_connect_failed">Could not continue from desktop</string>
+    <string name="roofy_connect_not_configured">Pair the desktop import endpoint first</string>
     <string name="desktop_import">Desktop import queue</string>
     <string name="desktop_import_integration_desc">Send mobile songs to the Roofy desktop import queue</string>
     <string name="desktop_import_settings_desc">Pair with Roofy desktop to send YouTube Music tracks from this phone into the desktop import queue.</string>

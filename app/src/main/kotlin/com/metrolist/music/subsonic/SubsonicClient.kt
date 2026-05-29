@@ -63,6 +63,32 @@ class SubsonicClient(
             parameters.append("id", id)
         }.response.ensureOk()
 
+    suspend fun getPlaylists(): List<SubsonicPlaylist> =
+        request("getPlaylists.view").response.ensureOk().playlists?.playlist ?: emptyList()
+
+    suspend fun getPlaylist(id: String): SubsonicPlaylist =
+        request("getPlaylist.view") {
+            parameters.append("id", id)
+        }.response.ensureOk().playlist ?: throw IllegalStateException("Playlist not found")
+
+    suspend fun createPlaylist(
+        name: String,
+        songIds: List<String>,
+    ): SubsonicResponse =
+        request("createPlaylist.view") {
+            parameters.append("name", name)
+            songIds.forEach { parameters.append("songId", it) }
+        }.response.ensureOk()
+
+    suspend fun updatePlaylist(
+        playlistId: String,
+        songIdsToAdd: List<String>,
+    ): SubsonicResponse =
+        request("updatePlaylist.view") {
+            parameters.append("playlistId", playlistId)
+            songIdsToAdd.forEach { parameters.append("songIdToAdd", it) }
+        }.response.ensureOk()
+
     fun streamUrl(id: String): String =
         endpoint("stream.view") {
             parameters.append("id", id)

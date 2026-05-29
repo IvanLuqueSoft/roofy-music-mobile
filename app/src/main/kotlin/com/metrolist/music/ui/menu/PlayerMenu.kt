@@ -86,8 +86,12 @@ import com.metrolist.music.LocalDownloadUtil
 import com.metrolist.music.LocalListenTogetherManager
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.DesktopImportEndpointUrlKey
+import com.metrolist.music.constants.DesktopImportTokenKey
 import com.metrolist.music.constants.ListItemHeight
 import com.metrolist.music.constants.VarispeedKey
+import com.metrolist.music.desktopimport.HandoffPlayback
+import com.metrolist.music.subsonic.personalLibraryCredentials
 import com.metrolist.music.listentogether.ConnectionState
 import com.metrolist.music.listentogether.ListenTogetherEvent
 import com.metrolist.music.models.MediaMetadata
@@ -162,6 +166,12 @@ fun PlayerMenu(
     var showListenTogetherDialog by rememberSaveable {
         mutableStateOf(false)
     }
+
+    val desktopImportEndpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
+    val desktopImportToken by rememberPreference(DesktopImportTokenKey, "")
+    var handoffInProgress by rememberSaveable { mutableStateOf(false) }
+    val roofyConnectSuccessText = stringResource(R.string.roofy_connect_success)
+    val roofyConnectFailedText = stringResource(R.string.roofy_connect_failed)
 
     val listenTogetherManager = LocalListenTogetherManager.current
     val listenTogetherRoleState = listenTogetherManager?.role?.collectAsStateWithLifecycle(initialValue = com.metrolist.music.listentogether.RoomRole.NONE)
@@ -633,6 +643,60 @@ fun PlayerMenu(
             Material3MenuGroup(
                 items =
                     buildList {
+                        if (desktopImportEndpointUrl.isNotBlank() && desktopImportToken.isNotBlank()) {
+                            add(
+                                Material3MenuItemData(
+                                    title = { Text(text = stringResource(R.string.roofy_connect_continue_on_phone)) },
+                                    description = {
+                                        Text(text = stringResource(R.string.roofy_connect_continue_on_phone_desc))
+                                    },
+                                    icon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.sync),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        if (handoffInProgress) return@Material3MenuItemData
+                                        handoffInProgress = true
+                                        coroutineScope.launch {
+                                            val result =
+                                                runCatching {
+                                                    HandoffPlayback.continueFromDesktop(
+                                                        database = database,
+                                                        playerConnection = playerConnection,
+                                                        endpointUrl = desktopImportEndpointUrl,
+                                                        token = desktopImportToken,
+                                                        personalLibraryCredentials =
+                                                            context.personalLibraryCredentials(),
+                                                    )
+                                                }
+                                            handoffInProgress = false
+                                            result
+                                                .onSuccess {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            roofyConnectSuccessText,
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                    playerBottomSheetState.collapseSoft()
+                                                    onDismiss()
+                                                }
+                                                .onFailure {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            "$roofyConnectFailedText: ${it.message}",
+                                                            Toast.LENGTH_LONG,
+                                                        ).show()
+                                                }
+                                        }
+                                    },
+                                ),
+                            )
+                        }
                         add(
                             Material3MenuItemData(
                                 title = { Text(text = stringResource(R.string.listen_together)) },
