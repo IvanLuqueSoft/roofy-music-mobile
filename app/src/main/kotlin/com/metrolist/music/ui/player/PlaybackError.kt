@@ -43,15 +43,17 @@ fun PlaybackError(
         ?: error.message 
         ?: stringResource(R.string.error_unknown)
     
-    // Check if this is an age-restricted content error
-    // Age-restricted content typically returns 403 Forbidden or contains age-related messages
-    val isAgeRestricted = rawErrorMessage.contains("age", ignoreCase = true) ||
-            rawErrorMessage.contains("Sign in to confirm your age", ignoreCase = true) ||
-            rawErrorMessage.contains("LOGIN_REQUIRED", ignoreCase = true) ||
-            rawErrorMessage.contains("confirm your age", ignoreCase = true) ||
-            rawErrorMessage.contains("403", ignoreCase = true) ||
-            rawErrorMessage.contains("Response code: 403", ignoreCase = true) ||
-            error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    val ageRestrictedSignals =
+        listOf(
+            "age-restricted",
+            "age restricted",
+            "AGE_CHECK_REQUIRED",
+            "AGE_VERIFICATION_REQUIRED",
+            "CONTENT_CHECK_REQUIRED",
+            "Sign in to confirm your age",
+            "confirm your age",
+        )
+    val isAgeRestricted = ageRestrictedSignals.any { rawErrorMessage.contains(it, ignoreCase = true) }
     
     val errorMessage = if (isAgeRestricted) {
         "This app does not support playing age-restricted songs. We are working on fixing this issue."

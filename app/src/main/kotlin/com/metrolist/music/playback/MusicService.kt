@@ -446,6 +446,7 @@ class MusicService :
 
     // Flag to bypass cache when quality changes - forces fresh stream fetch
     private val bypassCacheForQualityChange = mutableSetOf<String>()
+    private val forceYtDlpFallbackForMediaIds = Collections.synchronizedSet(mutableSetOf<String>())
 
     // Enhanced error tracking for strict retry management
     private var currentMediaIdRetryCount = mutableMapOf<String, Int>()
@@ -2996,6 +2997,7 @@ class MusicService :
 
         // Clear the cached URL
         songUrlCache.remove(mediaId)
+        forceYtDlpFallbackForMediaIds.add(mediaId)
         Timber.tag(TAG).d("Cleared cached URL for $mediaId")
 
         // Clear decryption caches
@@ -3072,6 +3074,7 @@ class MusicService :
         retryJob =
             scope.launch {
                 performAggressiveCacheClear(mediaId)
+                forceYtDlpFallbackForMediaIds.add(mediaId)
                 delay(RETRY_DELAY_MS)
 
                 val currentIndex = player.currentMediaItemIndex
@@ -3274,10 +3277,12 @@ class MusicService :
             Timber.tag("MusicService").i("FETCHING STREAM: $mediaId | quality=$audioQuality")
             val playbackData =
                 runBlocking(Dispatchers.IO) {
+                    val preferYtDlpFallback = forceYtDlpFallbackForMediaIds.remove(mediaId)
                     YTPlayerUtils.playerResponseForPlayback(
                         mediaId,
                         audioQuality = audioQuality,
                         connectivityManager = connectivityManager,
+                        preferYtDlpFallback = preferYtDlpFallback,
                     )
                 }.getOrElse { throwable ->
                     when (throwable) {
@@ -3333,10 +3338,10 @@ class MusicService :
                             id = mediaId,
                             itag = format.itag,
                             mimeType = format.mimeType.split(";")[0],
-                            codecs = format.mimeType.split("codecs=")[1].removeSurrounding("\""),
+                            codecs = format.mimeType.substringAfter("codecs=", "unknown").removeSurrounding("\""),
                             bitrate = format.bitrate,
                             sampleRate = format.audioSampleRate,
-                            contentLength = format.contentLength!!,
+                            contentLength = format.contentLength ?: 0L,
                             loudnessDb = loudnessDb,
                             perceptualLoudnessDb = perceptualLoudnessDb,
                             playbackUrl = nonNullPlayback.playbackTracking?.videostatsPlaybackUrl?.baseUrl,

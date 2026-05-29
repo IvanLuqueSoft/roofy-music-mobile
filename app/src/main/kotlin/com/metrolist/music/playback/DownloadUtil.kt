@@ -94,7 +94,7 @@ constructor(
                 return@Factory dataSpec
             }
 
-            songUrlCache[mediaId]?.takeIf { it.second < System.currentTimeMillis() }?.let {
+            songUrlCache[mediaId]?.takeIf { it.second > System.currentTimeMillis() }?.let {
                 return@Factory dataSpec.withUri(it.first.toUri())
             }
 
@@ -113,10 +113,10 @@ constructor(
                         id = mediaId,
                         itag = format.itag,
                         mimeType = format.mimeType.split(";")[0],
-                        codecs = format.mimeType.split("codecs=")[1].removeSurrounding("\""),
+                        codecs = format.mimeType.substringAfter("codecs=", "unknown").removeSurrounding("\""),
                         bitrate = format.bitrate,
                         sampleRate = format.audioSampleRate,
-                        contentLength = format.contentLength!!,
+                        contentLength = format.contentLength ?: 0L,
                         loudnessDb = playbackData.audioConfig?.loudnessDb,
                         perceptualLoudnessDb = playbackData.audioConfig?.perceptualLoudnessDb,
                         playbackUrl = playbackData.playbackTracking?.videostatsPlaybackUrl?.baseUrl
@@ -146,11 +146,13 @@ constructor(
                 upsert(updatedSong)
             }
 
-            val streamUrl = playbackData.streamUrl.let {
-                "${it}&range=0-${format.contentLength ?: 10000000}"
-            }
+            val streamUrl =
+                format.contentLength?.let { contentLength ->
+                    "${playbackData.streamUrl}&range=0-$contentLength"
+                } ?: playbackData.streamUrl
 
-            songUrlCache[mediaId] = streamUrl to playbackData.streamExpiresInSeconds * 1000L
+            songUrlCache[mediaId] =
+                streamUrl to System.currentTimeMillis() + playbackData.streamExpiresInSeconds * 1000L
             dataSpec.withUri(streamUrl.toUri())
         }
 

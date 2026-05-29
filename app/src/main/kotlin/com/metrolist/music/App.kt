@@ -32,6 +32,7 @@ import com.metrolist.music.di.ApplicationScope
 import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.extensions.toInetSocketAddress
 import com.metrolist.music.utils.CrashHandler
+import com.metrolist.music.utils.YtDlpStreamFallback
 import com.metrolist.music.utils.cipher.CipherDeobfuscator
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.reportException
@@ -80,8 +81,13 @@ class App :
 
         // Initialize cipher deobfuscator for WEB_REMIX streaming
         CipherDeobfuscator.initialize(this)
+        YtDlpStreamFallback.setContext(this)
 
         Timber.plant(Timber.DebugTree())
+
+        applicationScope.launch(Dispatchers.IO) {
+            YtDlpStreamFallback.initialize(this@App)
+        }
 
         // Pre-read Coil cache size on background to avoid runBlocking in newImageLoader
         applicationScope.launch(Dispatchers.IO) {

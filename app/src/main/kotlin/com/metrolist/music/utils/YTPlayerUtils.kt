@@ -80,6 +80,7 @@ object YTPlayerUtils {
         playlistId: String? = null,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager,
+        preferYtDlpFallback: Boolean = false,
     ): Result<PlaybackData> = runCatching {
         Timber.tag(TAG).d("=== PLAYER RESPONSE FOR PLAYBACK ===")
         Timber.tag(TAG).d("videoId: $videoId")
@@ -115,7 +116,19 @@ object YTPlayerUtils {
 
         // Try WEB_REMIX with signature timestamp and poToken (same as before)
         Timber.tag(logTag).d("Attempting to get player response using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
-        var mainPlayerResponse = YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp.timestamp, poToken?.playerRequestPoToken).getOrThrow()
+        var mainPlayerResponse =
+            try {
+                YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp.timestamp, poToken?.playerRequestPoToken).getOrThrow()
+            } catch (e: Exception) {
+                if (preferYtDlpFallback) {
+                    tryYtDlpFallback(
+                        videoId = videoId,
+                        audioQuality = audioQuality,
+                        connectivityManager = connectivityManager,
+                    )?.let { return@runCatching it }
+                }
+                throw e
+            }
 
         // Debug uploaded track response
         if (isUploadedTrack || playlistId?.contains("MLPT") == true) {
@@ -156,6 +169,18 @@ object YTPlayerUtils {
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
         val retryMainPlayerResponse: PlayerResponse? = if (usedAgeRestrictedClient != null) mainPlayerResponse else null
+
+        if (preferYtDlpFallback) {
+            Timber.tag(logTag).d("Retry requested yt-dlp fallback before InnerTube stream clients")
+            tryYtDlpFallback(
+                videoId = videoId,
+                audioQuality = audioQuality,
+                connectivityManager = connectivityManager,
+                audioConfig = audioConfig,
+                videoDetails = videoDetails,
+                playbackTracking = playbackTracking,
+            )?.let { return@runCatching it }
+        }
 
         // Check current status
         val currentStatus = mainPlayerResponse.playabilityStatus.status
@@ -332,6 +357,22 @@ object YTPlayerUtils {
             }
         }
 
+        if (streamPlayerResponse?.playabilityStatus?.status != "OK" ||
+            streamExpiresInSeconds == null ||
+            format == null ||
+            streamUrl == null
+        ) {
+            Timber.tag(logTag).d("InnerTube clients did not produce a playable stream; trying yt-dlp fallback")
+            tryYtDlpFallback(
+                videoId = videoId,
+                audioQuality = audioQuality,
+                connectivityManager = connectivityManager,
+                audioConfig = audioConfig,
+                videoDetails = videoDetails,
+                playbackTracking = playbackTracking,
+            )?.let { return@runCatching it }
+        }
+
         if (streamPlayerResponse == null) {
             Timber.tag(logTag).e("Bad stream player response - all clients failed")
             if (isUploadedTrack) {
@@ -342,14 +383,13 @@ object YTPlayerUtils {
 
         if (streamPlayerResponse.playabilityStatus.status != "OK") {
             val errorReason = streamPlayerResponse.playabilityStatus.reason
-            // YouTube often surfaces generic reasons (e.g. "error 2000") for restricted or
-            // unavailable streams; Roofy Music cannot recover those without official playback.
+            // YouTube often surfaces generic reasons for restricted or unavailable streams.
             Timber.tag(logTag).e("Playability status not OK: $errorReason")
             if (isUploadedTrack) {
                 println("[PLAYBACK_DEBUG] FAILURE: Playability not OK for uploaded track - status=${streamPlayerResponse.playabilityStatus.status}, reason=$errorReason")
             }
             throw PlaybackException(
-                errorReason,
+                errorReason ?: streamPlayerResponse.playabilityStatus.status,
                 null,
                 PlaybackException.ERROR_CODE_REMOTE_ERROR
             )
@@ -385,6 +425,35 @@ object YTPlayerUtils {
     }.onFailure { e ->
         println("[PLAYBACK_DEBUG] EXCEPTION during playback for videoId=$videoId: ${e::class.simpleName}: ${e.message}")
         e.printStackTrace()
+    }
+
+    private suspend fun tryYtDlpFallback(
+        videoId: String,
+        audioQuality: AudioQuality,
+        connectivityManager: ConnectivityManager,
+        audioConfig: PlayerResponse.PlayerConfig.AudioConfig? = null,
+        videoDetails: PlayerResponse.VideoDetails? = null,
+        playbackTracking: PlayerResponse.PlaybackTracking? = null,
+    ): PlaybackData? {
+        val ytDlpPlaybackData =
+            YtDlpStreamFallback
+                .resolve(
+                    videoId = videoId,
+                    audioQuality = audioQuality,
+                    connectivityManager = connectivityManager,
+                ).getOrNull()
+
+        return ytDlpPlaybackData?.let {
+            Timber.tag(TAG).i("Playback: client=yt-dlp, videoId=$videoId")
+            PlaybackData(
+                audioConfig = audioConfig,
+                videoDetails = videoDetails,
+                playbackTracking = playbackTracking,
+                format = it.format,
+                streamUrl = it.streamUrl,
+                streamExpiresInSeconds = it.streamExpiresInSeconds,
+            )
+        }
     }
     /**
      * Simple player response intended to use for metadata only.

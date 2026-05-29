@@ -230,7 +230,7 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = false
+            useLegacyPackaging = true
             keepDebugSymbols +=
                 listOf(
                     "**/libandroidx.graphics.path.so",
@@ -393,6 +393,8 @@ dependencies {
     // Protobuf for message serialization (lite version for Android)
     implementation(libs.protobuf.javalite)
     implementation(libs.protobuf.kotlin.lite)
+
+    implementation(libs.youtubedl.android)
 
     coreLibraryDesugaring(libs.desugaring)
 
