@@ -183,6 +183,8 @@ import com.metrolist.music.playback.queues.YouTubeQueue
 import com.metrolist.music.playback.queues.YouTubePlaylistQueue
 import com.metrolist.music.playback.queues.filterExplicit
 import com.metrolist.music.playback.queues.filterVideoSongs
+import com.metrolist.music.subsonic.SubsonicClient
+import com.metrolist.music.subsonic.personalLibraryCredentials
 import com.metrolist.music.constants.LoudnessLevel
 import com.metrolist.music.constants.LoudnessLevelKey
 import com.metrolist.music.utils.CoilBitmapLoader
@@ -3272,6 +3274,20 @@ class MusicService :
                 }
             } else {
                 Timber.tag("MusicService").i("BYPASSING CACHE for $mediaId due to quality change")
+            }
+
+            SubsonicClient.localIdFromMediaId(mediaId)?.let { subsonicId ->
+                val credentials = personalLibraryCredentials()
+                if (!credentials.isConfigured) {
+                    throw PlaybackException(
+                        getString(R.string.personal_library_not_configured),
+                        null,
+                        PlaybackException.ERROR_CODE_REMOTE_ERROR,
+                    )
+                }
+
+                val streamUrl = SubsonicClient(credentials).streamUrl(subsonicId)
+                return@Factory dataSpec.withUri(streamUrl.toUri())
             }
 
             Timber.tag("MusicService").i("FETCHING STREAM: $mediaId | quality=$audioQuality")

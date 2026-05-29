@@ -207,6 +207,12 @@ val ScrobbleDelayPercentKey = floatPreferencesKey("scrobbleDelayPercent")
 val ScrobbleMinSongDurationKey = intPreferencesKey("scrobbleMinSongDuration")
 val ScrobbleDelaySecondsKey = intPreferencesKey("scrobbleDelaySeconds")
 
+// Personal Library / Subsonic
+val PersonalLibraryEnabledKey = booleanPreferencesKey("personalLibraryEnabled")
+val PersonalLibraryServerUrlKey = stringPreferencesKey("personalLibraryServerUrl")
+val PersonalLibraryUsernameKey = stringPreferencesKey("personalLibraryUsername")
+val PersonalLibraryPasswordKey = stringPreferencesKey("personalLibraryPassword")
+
 val ChipSortTypeKey = stringPreferencesKey("chipSortType")
 val SongSortTypeKey = stringPreferencesKey("songSortType")
 val SongSortDescendingKey = booleanPreferencesKey("songSortDescending")
