@@ -109,6 +109,7 @@ import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.ui.component.ActionPromptDialog
 import com.metrolist.music.ui.component.BottomSheet
 import com.metrolist.music.ui.component.BottomSheetState
+import com.metrolist.music.ui.component.EmptyPlaceholder
 import com.metrolist.music.ui.component.LocalBottomSheetPageState
 import com.metrolist.music.ui.component.LocalMenuState
 import com.metrolist.music.ui.component.MediaMetadataListItem
@@ -277,7 +278,7 @@ fun Queue(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.queue_music),
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.product_ux_a11y_open_queue),
                         modifier = Modifier.size(iconSize),
                         tint = RetroTokens.Text,
                     )
@@ -316,7 +317,7 @@ fun Queue(
                     } else {
                         Icon(
                             painter = painterResource(id = R.drawable.bedtime),
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.sleep_timer),
                             modifier = Modifier.size(iconSize),
                             tint = RetroTokens.Text,
                         )
@@ -342,7 +343,14 @@ fun Queue(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.shuffle),
-                        contentDescription = null,
+                        contentDescription =
+                            stringResource(
+                                if (shuffleModeEnabled) {
+                                    R.string.action_shuffle_on
+                                } else {
+                                    R.string.action_shuffle_off
+                                },
+                            ),
                         modifier = Modifier.size(iconSize),
                         tint = if (shuffleModeEnabled) RetroTokens.TextHot else RetroTokens.Text,
                     )
@@ -363,7 +371,7 @@ fun Queue(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.lyrics),
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.lyrics),
                         modifier = Modifier.size(iconSize),
                         tint = if (showInlineLyrics) RetroTokens.TextHot else RetroTokens.Text,
                     )
@@ -393,7 +401,14 @@ fun Queue(
                                 else -> R.drawable.repeat
                             },
                         ),
-                        contentDescription = null,
+                        contentDescription =
+                            stringResource(
+                                when (repeatMode) {
+                                    Player.REPEAT_MODE_ONE -> R.string.repeat_mode_one
+                                    Player.REPEAT_MODE_ALL -> R.string.repeat_mode_all
+                                    else -> R.string.repeat_mode_off
+                                },
+                            ),
                         modifier = Modifier.size(iconSize),
                         tint = if (repeatMode != Player.REPEAT_MODE_OFF) RetroTokens.TextHot else RetroTokens.Text,
                     )
@@ -423,7 +438,7 @@ fun Queue(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.more_vert),
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.options),
                         modifier = Modifier.size(iconSize),
                         tint = RetroTokens.Text,
                     )
@@ -634,6 +649,19 @@ fun Queue(
                     )
                 }
 
+                if (mutableQueueWindows.isEmpty()) {
+                    item(key = "queue_empty") {
+                        EmptyPlaceholder(
+                            icon = R.drawable.queue_music,
+                            text = stringResource(R.string.product_ux_queue_empty),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                        )
+                    }
+                }
+
                 itemsIndexed(
                     items = mutableQueueWindows,
                     key = { _, item -> item.uid.hashCode() },
@@ -733,7 +761,7 @@ fun Queue(
                                                 ) {
                                                     Icon(
                                                         painter = painterResource(R.drawable.more_vert),
-                                                        contentDescription = null,
+                                                        contentDescription = stringResource(R.string.options),
                                                         modifier = Modifier.size(18.dp),
                                                         tint = RetroTokens.Text,
                                                     )
@@ -746,7 +774,7 @@ fun Queue(
                                                 ) {
                                                     Icon(
                                                         painter = painterResource(R.drawable.drag_handle),
-                                                        contentDescription = null,
+                                                        contentDescription = stringResource(R.string.product_ux_a11y_reorder),
                                                         modifier = Modifier.size(18.dp),
                                                         tint = RetroTokens.TextMuted,
                                                     )
@@ -857,7 +885,7 @@ fun Queue(
                                         ) {
                                             Icon(
                                                 painter = painterResource(R.drawable.playlist_play),
-                                                contentDescription = null,
+                                                contentDescription = stringResource(R.string.play_next),
                                                 modifier = Modifier.size(18.dp),
                                                 tint = RetroTokens.Text,
                                             )
@@ -873,7 +901,7 @@ fun Queue(
                                         ) {
                                             Icon(
                                                 painter = painterResource(R.drawable.queue_music),
-                                                contentDescription = null,
+                                                contentDescription = stringResource(R.string.add_to_queue),
                                                 modifier = Modifier.size(18.dp),
                                                 tint = RetroTokens.Text,
                                             )
@@ -951,7 +979,14 @@ fun Queue(
                         ) {
                             Icon(
                                 painter = painterResource(if (locked) R.drawable.lock else R.drawable.lock_open),
-                                contentDescription = null,
+                                contentDescription =
+                                    stringResource(
+                                        if (locked) {
+                                            R.string.product_ux_a11y_lock_queue
+                                        } else {
+                                            R.string.product_ux_a11y_unlock_queue
+                                        },
+                                    ),
                                 modifier = Modifier.size(18.dp),
                                 tint = RetroTokens.Text,
                             )
@@ -1008,7 +1043,7 @@ fun Queue(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.close),
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.product_ux_a11y_close),
                             modifier = Modifier.size(18.dp),
                             tint = RetroTokens.Text,
                         )
@@ -1046,7 +1081,7 @@ fun Queue(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.more_vert),
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.options),
                             tint = LocalContentColor.current,
                             modifier = Modifier.size(18.dp),
                         )
@@ -1095,7 +1130,14 @@ fun Queue(
                 val finalAlpha = if (!isListenTogetherGuest) baseAlpha else 0.3f
                 Icon(
                     painter = painterResource(R.drawable.shuffle),
-                    contentDescription = null,
+                    contentDescription =
+                        stringResource(
+                            if (shuffleModeEnabled) {
+                                R.string.action_shuffle_on
+                            } else {
+                                R.string.action_shuffle_off
+                            },
+                        ),
                     modifier = Modifier.size(18.dp).alpha(finalAlpha),
                     tint = RetroTokens.Text,
                 )
@@ -1103,7 +1145,7 @@ fun Queue(
 
             Icon(
                 painter = painterResource(R.drawable.expand_more),
-                contentDescription = null,
+                contentDescription = stringResource(R.string.product_ux_a11y_collapse_queue),
                 modifier = Modifier.align(Alignment.Center),
                 tint = RetroTokens.Text,
             )
@@ -1124,7 +1166,14 @@ fun Queue(
                                 else -> throw IllegalStateException()
                             },
                         ),
-                    contentDescription = null,
+                    contentDescription =
+                        stringResource(
+                            when (repeatMode) {
+                                Player.REPEAT_MODE_ONE -> R.string.repeat_mode_one
+                                Player.REPEAT_MODE_ALL -> R.string.repeat_mode_all
+                                else -> R.string.repeat_mode_off
+                            },
+                        ),
                     modifier = Modifier.size(18.dp).alpha(finalAlpha),
                     tint = RetroTokens.Text,
                 )

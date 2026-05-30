@@ -289,7 +289,7 @@ fun MiniPlayer(
                             }
                         AsyncImage(
                             model = thumbnailUrl,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.album_cover_desc),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -377,7 +377,15 @@ fun MiniPlayer(
                                 else -> R.drawable.play
                             },
                         ),
-                        contentDescription = null,
+                        contentDescription =
+                            when {
+                                isListenTogetherGuest ->
+                                    stringResource(if (isMuted) R.string.unmute else R.string.mute)
+                                playbackState == Player.STATE_ENDED ->
+                                    stringResource(R.string.product_ux_a11y_replay)
+                                effectiveIsPlaying -> stringResource(R.string.pause)
+                                else -> stringResource(R.string.play)
+                            },
                         tint = RetroTokens.Text,
                         modifier = Modifier.size(20.dp),
                     )
@@ -400,7 +408,7 @@ fun MiniPlayer(
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.skip_next),
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.next),
                         tint = if (canSkipNext && !isListenTogetherGuest) RetroTokens.Text else RetroTokens.TextDim,
                         modifier = Modifier.size(20.dp),
                     )

@@ -784,7 +784,7 @@ fun BottomSheetPlayer(
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.fullscreen),
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.product_ux_a11y_fullscreen),
                                     modifier = Modifier.size(20.dp),
                                     tint = RetroTokens.Text,
                                 )
@@ -807,7 +807,7 @@ fun BottomSheetPlayer(
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.share),
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.share),
                                     modifier = Modifier.size(20.dp),
                                     tint = RetroTokens.Text,
                                 )
@@ -840,7 +840,7 @@ fun BottomSheetPlayer(
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.more_horiz),
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.options),
                                     modifier = Modifier.size(20.dp),
                                     tint = RetroTokens.Text,
                                 )
@@ -863,7 +863,7 @@ fun BottomSheetPlayer(
                                                 R.drawable.favorite_border
                                             },
                                         ),
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.action_like),
                                     modifier = Modifier.size(20.dp),
                                     tint = if (isFavorite) RetroTokens.Warning else RetroTokens.Text,
                                 )
@@ -1066,7 +1066,7 @@ fun BottomSheetPlayer(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.skip_previous),
-                                contentDescription = null,
+                                contentDescription = stringResource(R.string.previous),
                                 modifier = Modifier.size(28.dp),
                                 tint = if (canSkipPrevious && !isListenTogetherGuest) RetroTokens.Text else RetroTokens.TextDim,
                             )
@@ -1466,7 +1466,7 @@ fun MoreActionsButton(
     ) {
         Image(
             painter = painterResource(R.drawable.more_horiz),
-            contentDescription = null,
+            contentDescription = stringResource(R.string.options),
             colorFilter = ColorFilter.tint(RetroTokens.Text),
             modifier = Modifier.size(20.dp),
         )
@@ -1506,7 +1506,7 @@ private fun PlayerMoreMenuButton(
     ) {
         Image(
             painter = painterResource(R.drawable.more_horiz),
-            contentDescription = null,
+            contentDescription = stringResource(R.string.options),
             colorFilter = ColorFilter.tint(RetroTokens.Text),
             modifier = Modifier.size(20.dp),
         )

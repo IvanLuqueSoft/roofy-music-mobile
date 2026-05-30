@@ -85,4 +85,15 @@
     <string name="show_cached_playlist">Show streaming buffer playlist (advanced)</string>
     <string name="song_cache">Streaming buffer</string>
     <string name="image_cache">Artwork buffer</string>
+    <string name="product_ux_a11y_replay">Play again</string>
+    <string name="product_ux_a11y_fullscreen">Fullscreen</string>
+    <string name="product_ux_queue_empty">Nothing in the queue. Play a song or add tracks from your library.</string>
+    <string name="product_ux_stats_empty_title">No listening stats yet</string>
+    <string name="product_ux_stats_empty_desc">Stats appear after you listen long enough for a track to count.</string>
+    <string name="product_ux_a11y_open_queue">Open queue</string>
+    <string name="product_ux_a11y_collapse_queue">Collapse queue</string>
+    <string name="product_ux_a11y_lock_queue">Lock queue editing</string>
+    <string name="product_ux_a11y_unlock_queue">Unlock queue editing</string>
+    <string name="product_ux_a11y_reorder">Reorder</string>
+    <string name="product_ux_a11y_close">Close</string>
 </resources>

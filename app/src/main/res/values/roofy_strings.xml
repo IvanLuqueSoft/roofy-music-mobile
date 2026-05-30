@@ -1146,6 +1146,17 @@
     <string name="product_ux_enable_stream_buffer">Keep songs ready while streaming</string>
     <string name="product_ux_enable_stream_buffer_desc">Saves recent streams so playback resumes faster. This is not the same as saving offline.</string>
     <string name="product_ux_video_mobile_roadmap">Video opens in your browser for now. In-app video is planned.</string>
+    <string name="product_ux_a11y_replay">Play again</string>
+    <string name="product_ux_a11y_fullscreen">Fullscreen</string>
+    <string name="product_ux_queue_empty">Nothing in the queue. Play a song or add tracks from your library.</string>
+    <string name="product_ux_stats_empty_title">No listening stats yet</string>
+    <string name="product_ux_stats_empty_desc">Stats appear after you listen long enough for a track to count.</string>
+    <string name="product_ux_a11y_open_queue">Open queue</string>
+    <string name="product_ux_a11y_collapse_queue">Collapse queue</string>
+    <string name="product_ux_a11y_lock_queue">Lock queue editing</string>
+    <string name="product_ux_a11y_unlock_queue">Unlock queue editing</string>
+    <string name="product_ux_a11y_reorder">Reorder</string>
+    <string name="product_ux_a11y_close">Close</string>
     <string name="search_unified_hint">Search songs, artists, albums, playlists, or videos</string>
     <string name="search_in_library_section">In your library</string>
     <string name="identify_song">Identify song</string>
