@@ -6,12 +6,14 @@
 
 package com.metrolist.music.ui.screens.library
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +37,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +67,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -85,12 +89,16 @@ import com.metrolist.music.constants.LibraryViewType
 import com.metrolist.music.constants.MixSortDescendingKey
 import com.metrolist.music.constants.MixSortType
 import com.metrolist.music.constants.MixSortTypeKey
+import com.metrolist.music.constants.PersonalLibraryPasswordKey
+import com.metrolist.music.constants.PersonalLibraryServerUrlKey
+import com.metrolist.music.constants.PersonalLibraryUsernameKey
 import com.metrolist.music.constants.ShowCachedPlaylistKey
 import com.metrolist.music.constants.ShowDownloadedPlaylistKey
 import com.metrolist.music.constants.ShowLikedPlaylistKey
 import com.metrolist.music.constants.ShowTopPlaylistKey
 import com.metrolist.music.constants.ShowUploadedPlaylistKey
 import com.metrolist.music.constants.YtmSyncKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.db.entities.Album
 import com.metrolist.music.db.entities.Artist
 import com.metrolist.music.db.entities.Playlist
@@ -102,6 +110,7 @@ import com.metrolist.music.extensions.reversed
 import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.playback.queues.ListQueue
 import com.metrolist.music.playback.queues.LocalAlbumRadio
+import com.metrolist.music.subsonic.PersonalLibraryImportService
 import com.metrolist.music.ui.component.AlbumListItem
 import com.metrolist.music.ui.component.ArtistListItem
 import com.metrolist.music.ui.component.CreatePlaylistDialog
@@ -116,7 +125,9 @@ import com.metrolist.music.ui.component.MenuState
 import com.metrolist.music.ui.menu.ArtistMenu
 import com.metrolist.music.ui.menu.PlaylistMenu
 import com.metrolist.music.ui.menu.SongMenu
+import com.metrolist.music.ui.theme.RetroButton
 import com.metrolist.music.ui.theme.RetroIconButton
+import com.metrolist.music.ui.theme.RetroTextButton
 import com.metrolist.music.ui.theme.RetroTokens
 import com.metrolist.music.ui.utils.resize
 import com.metrolist.music.utils.rememberEnumPreference
@@ -992,7 +1003,18 @@ fun LibraryMixScreen(
         }
 
         RetroIconButton(
-            onClick = { showCreatePlaylistDialog = true },
+            onClick = {
+                menuState.show {
+                    LibraryAddSheet(
+                        navController = navController,
+                        onCreatePlaylist = {
+                            menuState.dismiss()
+                            showCreatePlaylistDialog = true
+                        },
+                        onDismiss = menuState::dismiss,
+                    )
+                }
+            },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .windowInsetsPadding(
@@ -1004,7 +1026,7 @@ fun LibraryMixScreen(
         ) {
             Icon(
                 painter = painterResource(R.drawable.add),
-                contentDescription = stringResource(R.string.create_playlist),
+                contentDescription = stringResource(R.string.library_actions_content_desc),
             )
         }
 
@@ -1016,6 +1038,245 @@ fun LibraryMixScreen(
                     .align(Alignment.TopCenter)
                     .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
         )
+    }
+}
+
+@Composable
+private fun LibraryAddSheet(
+    navController: NavController,
+    onCreatePlaylist: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val menuState = LocalMenuState.current
+
+    Text(
+        text = stringResource(R.string.library_actions_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = RetroTokens.Text,
+    )
+    Spacer(Modifier.height(12.dp))
+
+    LibraryActionRow(
+        iconRes = R.drawable.library_add,
+        title = stringResource(R.string.library_action_import_computer),
+        subtitle = stringResource(R.string.library_action_import_computer_desc),
+        onClick = {
+            menuState.show {
+                LibraryComputerImportSheet(
+                    navController = navController,
+                    onDismiss = onDismiss,
+                )
+            }
+        },
+    )
+
+    HorizontalDivider(
+        color = RetroTokens.BorderMuted,
+        modifier = Modifier.padding(vertical = 8.dp),
+    )
+
+    LibraryActionRow(
+        iconRes = R.drawable.playlist_add,
+        title = stringResource(R.string.create_playlist),
+        subtitle = stringResource(R.string.library_actions_create_playlist_desc),
+        onClick = onCreatePlaylist,
+    )
+
+    Spacer(Modifier.height(18.dp))
+}
+
+@Composable
+private fun LibraryComputerImportSheet(
+    navController: NavController,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+
+    val serverUrl by rememberPreference(PersonalLibraryServerUrlKey, "")
+    val username by rememberPreference(PersonalLibraryUsernameKey, "")
+    val password by rememberPreference(PersonalLibraryPasswordKey, "")
+
+    val canImport = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+    val computerName = sessionUi.computerName.ifBlank { stringResource(R.string.listen_on_this_computer) }
+    val importStarted = stringResource(R.string.library_import_started)
+
+    Text(
+        text = stringResource(R.string.library_import_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = RetroTokens.Text,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text =
+            if (canImport) {
+                stringResource(R.string.library_import_ready_body)
+            } else {
+                stringResource(R.string.library_import_connect_body)
+            },
+        style = MaterialTheme.typography.bodyMedium,
+        color = RetroTokens.TextMuted,
+    )
+
+    Spacer(Modifier.height(18.dp))
+
+    LibraryImportStepRow(
+        iconRes = if (canImport) R.drawable.check else R.drawable.radio_button_checked,
+        title = stringResource(R.string.library_import_step_connect),
+        subtitle =
+            if (canImport) {
+                stringResource(R.string.library_import_connected_to, computerName)
+            } else {
+                stringResource(R.string.library_import_connect_title)
+            },
+        isActive = !canImport,
+    )
+
+    LibraryImportStepRow(
+        iconRes =
+            when {
+                canImport -> R.drawable.radio_button_checked
+                else -> R.drawable.radio_button_unchecked
+            },
+        title = stringResource(R.string.library_import_step_import),
+        subtitle =
+            if (canImport) {
+                stringResource(R.string.library_import_background_body)
+            } else {
+                stringResource(R.string.library_action_import_computer_desc)
+            },
+        isActive = canImport,
+    )
+
+    Spacer(Modifier.height(18.dp))
+
+    if (canImport) {
+        RetroButton(
+            onClick = {
+                PersonalLibraryImportService.start(context.applicationContext)
+                Toast.makeText(context, importStarted, Toast.LENGTH_SHORT).show()
+                onDismiss()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = stringResource(R.string.library_import_start).uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = RetroTokens.Text,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        RetroTextButton(
+            text = stringResource(R.string.library_import_new_code),
+            onClick = {
+                navController.navigate("link_computer?scan=true") {
+                    launchSingleTop = true
+                }
+                onDismiss()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        RetroButton(
+            onClick = {
+                navController.navigate("link_computer?scan=true") {
+                    launchSingleTop = true
+                }
+                onDismiss()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = stringResource(R.string.library_import_scan_code).uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = RetroTokens.Text,
+                maxLines = 1,
+            )
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
+}
+
+@Composable
+private fun LibraryActionRow(
+    iconRes: Int,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = RetroTokens.Text,
+            modifier = Modifier.size(24.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = RetroTokens.Text,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = RetroTokens.TextMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryImportStepRow(
+    iconRes: Int,
+    title: String,
+    subtitle: String,
+    isActive: Boolean,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = if (isActive) RetroTokens.Active else RetroTokens.TextMuted,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (isActive) RetroTokens.Text else RetroTokens.TextMuted,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = RetroTokens.TextMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

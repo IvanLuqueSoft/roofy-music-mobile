@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +76,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -114,11 +116,14 @@ import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.ErrorResult
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalDownloadUtil
 import com.metrolist.music.LocalListenTogetherManager
@@ -126,6 +131,7 @@ import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.constants.CropAlbumArtKey
 import com.metrolist.music.constants.DarkModeKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.constants.HidePlayerThumbnailKey
 import com.metrolist.music.constants.HideStatusBarOnFullscreenKey
 import com.metrolist.music.constants.KeepScreenOn
@@ -142,6 +148,8 @@ import com.metrolist.music.constants.SliderStyle
 import com.metrolist.music.constants.SliderStyleKey
 import com.metrolist.music.constants.SquigglySliderKey
 import com.metrolist.music.constants.ThumbnailCornerRadius
+import com.metrolist.music.desktopimport.DesktopRemoteClient
+import com.metrolist.music.desktopimport.DesktopRemoteState
 import com.metrolist.music.db.entities.LyricsEntity
 import com.metrolist.music.extensions.metadata
 import com.metrolist.music.extensions.togglePlayPause
@@ -150,6 +158,8 @@ import com.metrolist.music.listentogether.RoomRole
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.ui.component.BottomSheet
 import com.metrolist.music.ui.component.BottomSheetState
+import com.metrolist.music.ui.devices.ListenOnButton
+import com.metrolist.music.ui.devices.ListenOnSheet
 import com.metrolist.music.ui.component.LocalBottomSheetPageState
 import com.metrolist.music.ui.component.LocalMenuState
 import com.metrolist.music.ui.component.Lyrics
@@ -203,6 +213,10 @@ fun BottomSheetPlayer(
     val (hidePlayerThumbnail, onHidePlayerThumbnailChange) = rememberPreference(HidePlayerThumbnailKey, false)
     val (hideStatusBarOnFullscreen) = rememberPreference(HideStatusBarOnFullscreenKey, false)
     val cropAlbumArt by rememberPreference(CropAlbumArtKey, false)
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+    val remoteState by DeviceSessionManager.remoteState.collectAsStateWithLifecycle()
+    val isControllingComputer = sessionUi.isComputerOutputSelected
+    val computerName = sessionUi.computerName
 
     var showInlineLyrics by rememberSaveable {
         mutableStateOf(false)
@@ -314,8 +328,13 @@ fun BottomSheetPlayer(
         }
     }
 
-    // Use Cast state when casting, otherwise local player
-    val effectiveIsPlaying = if (isCasting) castIsPlaying else isPlaying
+    // Use the selected external output state when the phone is acting as a remote.
+    val effectiveIsPlaying =
+        when {
+            isControllingComputer -> remoteState.isPlaying
+            isCasting -> castIsPlaying
+            else -> isPlaying
+        }
 
     // Use State objects for position/duration to pass to MiniPlayer without causing recomposition
     // These states persist across playback state changes to ensure continuous progress updates
@@ -328,10 +347,10 @@ fun BottomSheetPlayer(
 
     val effectivePosition by remember {
         derivedStateOf {
-            if (isCasting) {
-                castPosition
-            } else {
-                position
+            when {
+                isControllingComputer -> remoteState.positionMs
+                isCasting -> castPosition
+                else -> position
             }
         }
     }
@@ -341,6 +360,13 @@ fun BottomSheetPlayer(
     }
     // Track when we last manually set position to avoid Cast overwriting it
     var lastManualSeekTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(isControllingComputer, remoteState.positionMs, remoteState.track?.durationMs) {
+        if (isControllingComputer) {
+            position = remoteState.positionMs
+            duration = remoteState.track?.durationMs?.takeIf { it > 0L } ?: C.TIME_UNSET
+        }
+    }
 
     if (!canSkipNext && automix.isNotEmpty()) {
         playerConnection.service.addToQueueAutomix(automix[0], 0)
@@ -497,8 +523,8 @@ fun BottomSheetPlayer(
     // Position update - only for local playback
     // When casting, we use castPosition directly to avoid sync issues
     // Use isPlaying instead of playbackState to ensure continuous updates during playback
-    LaunchedEffect(isPlaying, isCasting) {
-        if (!isCasting && isPlaying) {
+    LaunchedEffect(isPlaying, isCasting, isControllingComputer) {
+        if (!isControllingComputer && !isCasting && isPlaying) {
             while (isActive) {
                 delay(100) // Update more frequently for smoother progress bar
                 if (sliderPosition == null) { // Only update if user isn't dragging
@@ -510,8 +536,8 @@ fun BottomSheetPlayer(
     }
 
     // Also update position when playback state changes (e.g., song change, seek)
-    LaunchedEffect(playbackState, mediaMetadata?.id) {
-        if (!isCasting) {
+    LaunchedEffect(playbackState, mediaMetadata?.id, isControllingComputer) {
+        if (!isControllingComputer && !isCasting) {
             position = playerConnection.player.currentPosition
             duration = playerConnection.player.duration
         }
@@ -519,8 +545,8 @@ fun BottomSheetPlayer(
 
     // When casting, use Cast position/duration directly
     // But wait a bit after manual seeks to let Cast catch up
-    LaunchedEffect(isCasting, castPosition, castDuration) {
-        if (isCasting && sliderPosition == null) {
+    LaunchedEffect(isCasting, castPosition, castDuration, isControllingComputer) {
+        if (!isControllingComputer && isCasting && sliderPosition == null) {
             val timeSinceManualSeek = System.currentTimeMillis() - lastManualSeekTime
             if (timeSinceManualSeek > 1500) {
                 // Only update from Cast if we haven't manually seeked recently
@@ -1167,27 +1193,37 @@ fun BottomSheetPlayer(
                         val currentSliderPosition by rememberUpdatedState(sliderPosition)
                         val sliderPositionProvider = remember { { currentSliderPosition } }
                         val isExpandedProvider = remember(state) { { state.isExpanded } }
-                        AnimatedContent(
-                            targetState = showInlineLyrics,
-                            label = "Lyrics",
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        ) { showLyrics ->
-                            if (showLyrics) {
-                                InlineLyricsView(
-                                    mediaMetadata = mediaMetadata,
-                                    showLyrics = showLyrics,
-                                    positionProvider = { effectivePosition },
-                                )
-                            } else {
-                                Thumbnail(
-                                    sliderPositionProvider = sliderPositionProvider,
-                                    navController = navController,
-                                    playerBottomSheetState = state,
-                                    modifier = Modifier.animateContentSize(),
-                                    isPlayerExpanded = isExpandedProvider,
-                                    isLandscape = true,
-                                    isListenTogetherGuest = isListenTogetherGuest,
-                                )
+                        if (isControllingComputer) {
+                            DesktopRemoteArtwork(
+                                remoteState = remoteState,
+                                computerName = computerName,
+                                navController = navController,
+                                playerBottomSheetState = state,
+                                modifier = Modifier.animateContentSize(),
+                            )
+                        } else {
+                            AnimatedContent(
+                                targetState = showInlineLyrics,
+                                label = "Lyrics",
+                                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            ) { showLyrics ->
+                                if (showLyrics) {
+                                    InlineLyricsView(
+                                        mediaMetadata = mediaMetadata,
+                                        showLyrics = showLyrics,
+                                        positionProvider = { effectivePosition },
+                                    )
+                                } else {
+                                    Thumbnail(
+                                        sliderPositionProvider = sliderPositionProvider,
+                                        navController = navController,
+                                        playerBottomSheetState = state,
+                                        modifier = Modifier.animateContentSize(),
+                                        isPlayerExpanded = isExpandedProvider,
+                                        isLandscape = true,
+                                        isListenTogetherGuest = isListenTogetherGuest,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1196,14 +1232,22 @@ fun BottomSheetPlayer(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier =
                             Modifier
-                                .weight(if (showInlineLyrics) 0.65f else 1f, false)
+                                .weight(if (!isControllingComputer && showInlineLyrics) 0.65f else 1f, false)
                                 .animateContentSize()
                                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top)),
                     ) {
                         Spacer(Modifier.weight(1f))
 
-                        mediaMetadata?.let {
-                            controlsContent(it)
+                        if (isControllingComputer) {
+                            DesktopRemoteNowPlayingPanel(
+                                remoteState = remoteState,
+                                computerName = computerName,
+                                modifier = Modifier.padding(horizontal = PlayerHorizontalPadding),
+                            )
+                        } else {
+                            mediaMetadata?.let {
+                                controlsContent(it)
+                            }
                         }
 
                         Spacer(Modifier.weight(1f))
@@ -1232,32 +1276,50 @@ fun BottomSheetPlayer(
                         val currentSliderPosition by rememberUpdatedState(sliderPosition)
                         val sliderPositionProvider = remember { { currentSliderPosition } }
                         val isExpandedProvider = remember(state) { { state.isExpanded } }
-                        AnimatedContent(
-                            targetState = showInlineLyrics,
-                            label = "Lyrics",
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        ) { showLyrics ->
-                            if (showLyrics) {
-                                InlineLyricsView(
-                                    mediaMetadata = mediaMetadata,
-                                    showLyrics = showLyrics,
-                                    positionProvider = { effectivePosition },
-                                )
-                            } else {
-                                Thumbnail(
-                                    sliderPositionProvider = sliderPositionProvider,
-                                    navController = navController,
-                                    playerBottomSheetState = state,
-                                    modifier = Modifier.nestedScroll(state.preUpPostDownNestedScrollConnection),
-                                    isPlayerExpanded = isExpandedProvider,
-                                    isListenTogetherGuest = isListenTogetherGuest,
-                                )
+                        if (isControllingComputer) {
+                            DesktopRemoteArtwork(
+                                remoteState = remoteState,
+                                computerName = computerName,
+                                navController = navController,
+                                playerBottomSheetState = state,
+                                modifier = Modifier.nestedScroll(state.preUpPostDownNestedScrollConnection),
+                            )
+                        } else {
+                            AnimatedContent(
+                                targetState = showInlineLyrics,
+                                label = "Lyrics",
+                                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            ) { showLyrics ->
+                                if (showLyrics) {
+                                    InlineLyricsView(
+                                        mediaMetadata = mediaMetadata,
+                                        showLyrics = showLyrics,
+                                        positionProvider = { effectivePosition },
+                                    )
+                                } else {
+                                    Thumbnail(
+                                        sliderPositionProvider = sliderPositionProvider,
+                                        navController = navController,
+                                        playerBottomSheetState = state,
+                                        modifier = Modifier.nestedScroll(state.preUpPostDownNestedScrollConnection),
+                                        isPlayerExpanded = isExpandedProvider,
+                                        isListenTogetherGuest = isListenTogetherGuest,
+                                    )
+                                }
                             }
                         }
                     }
 
-                    mediaMetadata?.let {
-                        controlsContent(it)
+                    if (isControllingComputer) {
+                        DesktopRemoteNowPlayingPanel(
+                            remoteState = remoteState,
+                            computerName = computerName,
+                            modifier = Modifier.padding(horizontal = PlayerHorizontalPadding),
+                        )
+                    } else {
+                        mediaMetadata?.let {
+                            controlsContent(it)
+                        }
                     }
 
                     Spacer(Modifier.height(30.dp))
@@ -1286,6 +1348,346 @@ fun BottomSheetPlayer(
                     showInlineLyrics = !showInlineLyrics
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun DesktopRemoteArtwork(
+    remoteState: DesktopRemoteState,
+    computerName: String,
+    navController: NavController,
+    playerBottomSheetState: BottomSheetState,
+    modifier: Modifier = Modifier,
+) {
+    val track = remoteState.track
+    val context = LocalContext.current
+    val imageUrl = track?.imageUrl?.takeIf { it.isNotBlank() }
+    val computerTitle = computerName.ifBlank { stringResource(R.string.listen_on_this_computer) }
+
+    LaunchedEffect(track?.id, imageUrl, remoteState.connected) {
+        if (remoteState.connected && !DesktopRemoteClient.isDirectlyLoadableArtworkUrl(imageUrl)) {
+            DesktopRemoteClient.requestArtworkProxy()
+        }
+    }
+    val rawUnavailable = !remoteState.connected && !remoteState.connecting && !remoteState.isRecoveringConnection
+    var showUnavailable by remember { mutableStateOf(false) }
+    LaunchedEffect(rawUnavailable) {
+        if (rawUnavailable) {
+            delay(2_500)
+            showUnavailable = rawUnavailable
+        } else {
+            showUnavailable = false
+        }
+    }
+    val statusChip =
+        when {
+            showUnavailable -> stringResource(R.string.listen_on_computer_unavailable_title)
+            remoteState.isRecoveringConnection -> stringResource(R.string.listen_on_controlling_computer)
+            remoteState.connecting && !remoteState.connected ->
+                stringResource(R.string.listen_on_reconnecting)
+            remoteState.connected -> stringResource(R.string.listen_on_controlling_computer)
+            else -> stringResource(R.string.listen_on_reconnecting)
+        }
+
+    Box(
+        contentAlignment = Alignment.TopCenter,
+        modifier =
+            modifier
+                .fillMaxWidth(0.84f)
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(2.dp))
+                .background(RetroTokens.Panel)
+                .border(1.dp, RetroTokens.BorderMuted, RoundedCornerShape(2.dp)),
+    ) {
+        if (imageUrl != null) {
+            AsyncImage(
+                model =
+                    ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .listener(
+                            onError = { _: ImageRequest, _: ErrorResult ->
+                                DesktopRemoteClient.requestArtworkProxy()
+                            },
+                        )
+                        .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.listen_on),
+                    contentDescription = null,
+                    tint = RetroTokens.TextMuted,
+                    modifier = Modifier.size(56.dp),
+                )
+            }
+        }
+
+        if (showUnavailable) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f)),
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(
+                        if (showUnavailable) {
+                            RetroTokens.Warning.copy(alpha = 0.92f)
+                        } else {
+                            Color.Black.copy(alpha = 0.72f)
+                        },
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.cast_connected),
+                contentDescription = null,
+                tint = if (showUnavailable) RetroTokens.Text else RetroTokens.Active,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = statusChip,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = RetroTokens.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        if (!showUnavailable && computerTitle.isNotBlank()) {
+            Text(
+                text = computerTitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = RetroTokens.Text.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+
+        Row(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ListenOnButton(
+                navController = navController,
+                playerBottomSheetState = playerBottomSheetState,
+                tintColor = RetroTokens.Text,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DesktopRemoteNowPlayingPanel(
+    remoteState: DesktopRemoteState,
+    computerName: String,
+    modifier: Modifier = Modifier,
+) {
+    val lifecycleScope = LocalLifecycleOwner.current.lifecycleScope
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+    val track = remoteState.track
+    val rawUnavailable = !remoteState.connected && !remoteState.connecting && !remoteState.isRecoveringConnection
+    var showUnavailable by remember { mutableStateOf(false) }
+    LaunchedEffect(rawUnavailable) {
+        if (rawUnavailable) {
+            delay(2_500)
+            showUnavailable = rawUnavailable
+        } else {
+            showUnavailable = false
+        }
+    }
+    val isUnavailable = showUnavailable
+    val isReconnecting = !remoteState.isRecoveringConnection && !remoteState.connected && remoteState.connecting
+    val durationMs = if (isUnavailable) 0L else track?.durationMs?.takeIf { it > 0L } ?: 0L
+    var sliderPosition by remember(track?.id, durationMs) { mutableStateOf<Long?>(null) }
+    val shownPosition = if (isUnavailable) 0L else (sliderPosition ?: remoteState.positionMs).coerceAtLeast(0L)
+    val canControl = remoteState.connected
+    val titleText =
+        when {
+            isUnavailable -> stringResource(R.string.listen_on_computer_unavailable_title)
+            track?.title?.isNotBlank() == true -> track?.title.orEmpty()
+            else -> stringResource(R.string.listen_on_remote_ready)
+        }
+    val computerTitle = computerName.ifBlank { stringResource(R.string.listen_on_this_computer) }
+    val subtitleText =
+        when {
+            isReconnecting -> stringResource(R.string.listen_on_reconnecting)
+            isUnavailable && remoteState.errorMessage != null -> remoteState.errorMessage.orEmpty()
+            isUnavailable -> stringResource(R.string.listen_on_open_roofy_pc)
+            track?.artist?.isNotBlank() == true -> track?.artist.orEmpty()
+            else -> computerTitle
+        }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = titleText,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = RetroTokens.Text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Text(
+            text = subtitleText,
+            style = MaterialTheme.typography.bodySmall,
+            color = RetroTokens.TextMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        Slider(
+            value = shownPosition.coerceAtMost(durationMs).toFloat(),
+            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+            onValueChange = { sliderPosition = it.toLong() },
+            onValueChangeFinished = {
+                sliderPosition?.let(DesktopRemoteClient::seekTo)
+                sliderPosition = null
+            },
+            enabled = canControl && durationMs > 0L,
+            colors =
+                SliderDefaults.colors(
+                    thumbColor = RetroTokens.Text,
+                    activeTrackColor = RetroTokens.Magenta,
+                    inactiveTrackColor = RetroTokens.BorderMuted,
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = makeTimeString(shownPosition),
+                style = MaterialTheme.typography.labelMedium,
+                color = RetroTokens.TextMuted,
+            )
+            Text(
+                text = if (durationMs > 0L) makeTimeString(durationMs) else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = RetroTokens.TextMuted,
+            )
+        }
+
+        Spacer(Modifier.height(22.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            RetroIconButton(
+                onClick = DesktopRemoteClient::previous,
+                enabled = canControl,
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.skip_previous),
+                    contentDescription = stringResource(R.string.previous),
+                    modifier = Modifier.size(28.dp),
+                    tint = if (canControl) RetroTokens.Text else RetroTokens.TextDim,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            RetroIconButton(
+                onClick = DesktopRemoteClient::togglePlayPause,
+                enabled = canControl,
+                modifier = Modifier.size(68.dp),
+            ) {
+                Icon(
+                    painter = painterResource(if (remoteState.isPlaying) R.drawable.pause else R.drawable.play),
+                    contentDescription =
+                        if (remoteState.isPlaying) {
+                            stringResource(R.string.pause)
+                        } else {
+                            stringResource(R.string.play)
+                        },
+                    modifier = Modifier.size(32.dp),
+                    tint = if (canControl) RetroTokens.TextHot else RetroTokens.TextDim,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            RetroIconButton(
+                onClick = DesktopRemoteClient::next,
+                enabled = canControl,
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.skip_next),
+                    contentDescription = stringResource(R.string.next),
+                    modifier = Modifier.size(28.dp),
+                    tint = if (canControl) RetroTokens.Text else RetroTokens.TextDim,
+                )
+            }
+        }
+
+        if (isUnavailable) {
+            Spacer(Modifier.height(18.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                RetroTextButton(
+                    text = stringResource(R.string.listen_on_use_this_phone),
+                    onClick = {
+                        lifecycleScope.launch {
+                            DeviceSessionManager.setPlaybackTarget("phone")
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                RetroTextButton(
+                    text = stringResource(R.string.listen_on_retry),
+                    onClick = {
+                        lifecycleScope.launch {
+                            DeviceSessionManager.retryConnection()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = sessionUi.isPaired,
+                )
+            }
         }
     }
 }

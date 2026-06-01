@@ -7,6 +7,7 @@
 package com.metrolist.music.playback
 
 import android.content.Context
+import android.widget.Toast
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -17,6 +18,9 @@ import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
+import com.metrolist.music.constants.DesktopImportEndpointUrlKey
+import com.metrolist.music.constants.DesktopImportTokenKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.constants.SleepTimerCustomDaysKey
 import com.metrolist.music.constants.SleepTimerDayTimesKey
 import com.metrolist.music.constants.SleepTimerDefaultKey
@@ -25,6 +29,10 @@ import com.metrolist.music.constants.SleepTimerEndTimeKey
 import com.metrolist.music.constants.SleepTimerRepeatKey
 import com.metrolist.music.constants.SleepTimerStartTimeKey
 import com.metrolist.music.db.MusicDatabase
+import com.metrolist.music.desktopimport.DesktopConnect
+import com.metrolist.music.desktopimport.DesktopHandoffClient
+import com.metrolist.music.desktopimport.DesktopRemoteClient
+import com.metrolist.music.desktopimport.HandoffPlayback
 import com.metrolist.music.extensions.currentMetadata
 import com.metrolist.music.extensions.getCurrentQueueIndex
 import com.metrolist.music.extensions.getQueueWindows
@@ -41,8 +49,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalTime
@@ -61,6 +72,8 @@ class PlayerConnection(
     }
 
     val service = binder.service
+    private val appContext = context.applicationContext
+    private val connectionScope = scope
     private val playerReadinessFlow = service.isPlayerReady
 
     /**
@@ -130,7 +143,59 @@ class PlayerConnection(
             }
         }
 
+        var lastPlaybackTarget = DeviceSessionManager.uiState.value.playbackTarget
+        scope.launch {
+            DeviceSessionManager.uiState.collect { ui ->
+                if (ui.playbackTarget == "computer") {
+                    if (lastPlaybackTarget != "computer") {
+                        Timber.tag(TAG).d("playback_target_computer_stop_local")
+                        stopLocalPlayback()
+                    } else if (player.isPlaying || player.playWhenReady) {
+                        stopLocalPlayback()
+                    }
+                }
+                lastPlaybackTarget = ui.playbackTarget
+            }
+        }
+
         Timber.tag(TAG).d("PlayerConnection state flows initialized successfully")
+    }
+
+    private fun isDesktopRemoteControlActive(): Boolean =
+        !allowInternalSync && DeviceSessionManager.isComputerOutputSelected()
+
+    private fun ensureDesktopRemoteConnected() {
+        val session = DeviceSessionManager.uiState.value.session ?: return
+        DesktopRemoteClient.connect(session.remote.wsUrl, session.remote.token)
+    }
+
+    private fun shouldBlockLocalPlayback(): Boolean =
+        !allowInternalSync && DeviceSessionManager.isComputerOutputSelected()
+
+    /** Pause or stop the on-device ExoPlayer without routing to desktop remote control. */
+    fun pauseLocalOnly() {
+        try {
+            val castHandler = service.castConnectionHandler
+            if (castHandler?.isCasting?.value == true) {
+                castHandler.pause()
+            } else {
+                player.playWhenReady = false
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error in pauseLocalOnly")
+        }
+    }
+
+    fun stopLocalPlayback(clearQueue: Boolean = true) {
+        try {
+            pauseLocalOnly()
+            if (clearQueue) {
+                player.stop()
+                player.clearMediaItems()
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error in stopLocalPlayback")
+        }
     }
 
     // Effective playing state, considers Cast when active
@@ -235,6 +300,10 @@ class PlayerConnection(
             Timber.tag("PlayerConnection").d("playQueue blocked - Listen Together guest")
             return
         }
+        if (!allowInternalSync && shouldPlayQueueOnDesktop()) {
+            playQueueOnDesktop(queue)
+            return
+        }
         if (!playerReadinessFlow.value) {
             Timber.tag(TAG).w("playQueue called before player ready; delegating to service")
         }
@@ -243,6 +312,44 @@ class PlayerConnection(
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error in playQueue")
             throw e
+        }
+    }
+
+    private fun shouldPlayQueueOnDesktop(): Boolean = DeviceSessionManager.shouldPlayOnDesktop()
+
+    private fun playQueueOnDesktop(queue: Queue) {
+        connectionScope.launch {
+            runCatching {
+                val bridge = DeviceSessionManager.bridgeEndpoint()
+                    ?: throw IllegalStateException("Connect to your computer first.")
+                val (endpointUrl, token) = bridge
+                val session = DeviceSessionManager.uiState.value.session
+                    ?: throw IllegalStateException("Connect to your computer first.")
+
+                stopLocalPlayback()
+
+                val status = queue.getInitialStatus()
+                val snapshot = HandoffPlayback.buildSnapshot(status, playbackStatus = "playing")
+
+                if (snapshot.nowPlaying == null) {
+                    throw IllegalStateException("This song cannot play on your computer yet.")
+                }
+
+                DesktopRemoteClient.connect(session.remote.wsUrl, session.remote.token)
+                DesktopRemoteClient.applyHandoffSnapshot(snapshot)
+
+                val liveEndpoint = DesktopConnect.resolveLiveEndpoint(endpointUrl, token).getOrThrow()
+                DesktopHandoffClient.pushState(liveEndpoint, token, snapshot).getOrThrow()
+            }.onFailure { error ->
+                val message = error.message ?: "Could not connect to your computer"
+                Timber.tag(TAG).w(error, "Could not send queue to desktop")
+                if (DeviceSessionManager.isComputerOutputSelected()) {
+                    DesktopRemoteClient.markUnavailable(message)
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -324,6 +431,12 @@ class PlayerConnection(
      */
     fun togglePlayPause() {
         if (!allowInternalSync && shouldBlockPlaybackChanges?.invoke() == true) return
+        if (isDesktopRemoteControlActive()) {
+            ensureDesktopRemoteConnected()
+            DesktopRemoteClient.togglePlayPause()
+            return
+        }
+        if (shouldBlockLocalPlayback()) return
         try {
             val castHandler = service.castConnectionHandler
             if (castHandler?.isCasting?.value == true) {
@@ -344,6 +457,12 @@ class PlayerConnection(
      * Start playback - handles Cast when active
      */
     fun play() {
+        if (isDesktopRemoteControlActive()) {
+            ensureDesktopRemoteConnected()
+            DesktopRemoteClient.play()
+            return
+        }
+        if (shouldBlockLocalPlayback()) return
         try {
             val castHandler = service.castConnectionHandler
             if (castHandler?.isCasting?.value == true) {
@@ -363,6 +482,11 @@ class PlayerConnection(
      * Pause playback - handles Cast when active
      */
     fun pause() {
+        if (isDesktopRemoteControlActive()) {
+            ensureDesktopRemoteConnected()
+            DesktopRemoteClient.pause()
+            return
+        }
         try {
             val castHandler = service.castConnectionHandler
             if (castHandler?.isCasting?.value == true) {
@@ -392,6 +516,12 @@ class PlayerConnection(
     }
 
     fun seekToNext() {
+        if (isDesktopRemoteControlActive()) {
+            ensureDesktopRemoteConnected()
+            DesktopRemoteClient.next()
+            return
+        }
+        if (shouldBlockLocalPlayback()) return
         try {
             // When casting, use Cast skip instead of local player
             val castHandler = service.castConnectionHandler
@@ -413,6 +543,12 @@ class PlayerConnection(
     var onRestartSong: (() -> Unit)? = null
 
     fun seekToPrevious() {
+        if (isDesktopRemoteControlActive()) {
+            ensureDesktopRemoteConnected()
+            DesktopRemoteClient.previous()
+            return
+        }
+        if (shouldBlockLocalPlayback()) return
         try {
             // When casting, use Cast skip instead of local player
             val castHandler = service.castConnectionHandler
@@ -592,6 +728,12 @@ class PlayerConnection(
         mediaItem: MediaItem?,
         reason: Int,
     ) {
+        if (!allowInternalSync && DeviceSessionManager.isComputerOutputSelected()) {
+            currentMediaItemIndex.value = player.currentMediaItemIndex
+            currentWindowIndex.value = player.getCurrentQueueIndex()
+            updateCanSkipPreviousAndNext()
+            return
+        }
         mediaMetadata.value = mediaItem?.metadata
         currentMediaItemIndex.value = player.currentMediaItemIndex
         currentWindowIndex.value = player.getCurrentQueueIndex()

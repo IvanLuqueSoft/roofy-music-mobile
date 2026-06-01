@@ -51,23 +51,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.DesktopComputerNameKey
 import com.metrolist.music.constants.DesktopImportEndpointUrlKey
 import com.metrolist.music.constants.DesktopImportTokenKey
+import com.metrolist.music.constants.DesktopRemoteControlTokenKey
+import com.metrolist.music.constants.DesktopRemoteControlUrlKey
+import com.metrolist.music.constants.DevicePlaybackTargetKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.desktopimport.DesktopConnect
 import com.metrolist.music.desktopimport.DesktopHandoffClient
+import com.metrolist.music.desktopimport.DesktopRemoteClient
 import com.metrolist.music.desktopimport.HandoffPlayback
 import com.metrolist.music.desktopimport.HandoffSnapshot
-import com.metrolist.music.subsonic.personalLibraryCredentials
 import com.metrolist.music.ui.component.BottomSheetState
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.ui.theme.RetroTokens
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -78,13 +84,19 @@ fun ColumnScope.ListenOnSheet(
     playerBottomSheetState: BottomSheetState? = null,
 ) {
     val context = LocalContext.current
-    val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current
     val lifecycleScope = LocalLifecycleOwner.current.lifecycleScope
 
     val endpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
     val token by rememberPreference(DesktopImportTokenKey, "")
-    val isPaired = endpointUrl.isNotBlank() && token.isNotBlank()
+    val remoteControlUrl by rememberPreference(DesktopRemoteControlUrlKey, "")
+    val remoteControlToken by rememberPreference(DesktopRemoteControlTokenKey, "")
+    val computerName by rememberPreference(DesktopComputerNameKey, "")
+    var playbackTarget by rememberPreference(DevicePlaybackTargetKey, "phone")
+    val remoteState by DesktopRemoteClient.state.collectAsStateWithLifecycle()
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+    val isPaired = sessionUi.isPaired
+    val isRemoteReady = remoteControlUrl.isNotBlank()
 
     var desktopSnapshot by remember { mutableStateOf<HandoffSnapshot?>(null) }
     var desktopReachable by remember { mutableStateOf(false) }
@@ -92,11 +104,16 @@ fun ColumnScope.ListenOnSheet(
     var isProbing by remember(isPaired) { mutableStateOf(isPaired) }
     var isTransferring by remember { mutableStateOf(false) }
 
-    val successText = stringResource(R.string.listen_on_success)
     val failedText = stringResource(R.string.listen_on_failed)
     val switchingText = stringResource(R.string.listen_on_switching)
     val nowPlayingOnComputer = stringResource(R.string.listen_on_now_playing_on_computer)
     val nowPlayingOnPhone = stringResource(R.string.listen_on_now_playing_on_phone)
+    val remoteReady = stringResource(R.string.listen_on_remote_ready)
+    val computerTitle = computerName.ifBlank { stringResource(R.string.listen_on_this_computer) }
+
+    LaunchedEffect(sessionUi.playbackTarget) {
+        playbackTarget = sessionUi.playbackTarget
+    }
 
     LaunchedEffect(endpointUrl, token, isPaired) {
         if (!isPaired) {
@@ -149,11 +166,14 @@ fun ColumnScope.ListenOnSheet(
 
     val phoneHasMedia = playerConnection?.player?.currentMediaItem != null
     val phoneIsPlaying = playerConnection?.player?.isPlaying == true
-    val desktopHasMedia = desktopSnapshot?.nowPlaying != null
-    val desktopIsPlaying = desktopSnapshot?.playbackStatus.equals("playing", ignoreCase = true)
+    val desktopHasMedia = remoteState.track != null || desktopSnapshot?.nowPlaying != null
+    val desktopIsPlaying =
+        remoteState.isPlaying || desktopSnapshot?.playbackStatus.equals("playing", ignoreCase = true)
 
     val activeOnPhone =
         when {
+            playbackTarget == "computer" -> false
+            playbackTarget == "phone" -> true
             phoneIsPlaying -> true
             desktopIsPlaying -> false
             phoneHasMedia -> true
@@ -167,8 +187,8 @@ fun ColumnScope.ListenOnSheet(
             !isPaired -> stringResource(R.string.listen_on_connect_prompt)
             activeOnPhone && phoneHasMedia ->
                 stringResource(R.string.listen_on_status_playing_here, stringResource(R.string.listen_on_this_phone))
-            !activeOnPhone && desktopHasMedia ->
-                stringResource(R.string.listen_on_status_playing_here, stringResource(R.string.listen_on_this_computer))
+            !activeOnPhone && (desktopHasMedia || isRemoteReady) ->
+                stringResource(R.string.listen_on_status_playing_here, computerTitle)
             else -> stringResource(R.string.listen_on_status_pick_device)
         }
 
@@ -186,25 +206,42 @@ fun ColumnScope.ListenOnSheet(
     )
     Spacer(modifier = Modifier.height(20.dp))
 
-    ListenOnCastSection(onDismiss = onDismiss)
-    ListenOnWebControlSection(onDismiss = onDismiss)
-
     if (!isPaired) {
-        Text(
-            text = stringResource(R.string.listen_on_connect_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = RetroTokens.TextMuted,
+        ListenOnDeviceRow(
+            title = stringResource(R.string.listen_on_this_phone),
+            subtitle =
+                if (phoneHasMedia) {
+                    stringResource(R.string.listen_on_playing_here)
+                } else {
+                    stringResource(R.string.listen_on_ready)
+                },
+            iconRes = R.drawable.listen_on,
+            isActive = true,
+            enabled = true,
+            onClick = onDismiss,
         )
         Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.listen_on_connect_desktop_stale_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = RetroTokens.TextMuted,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         FilledTonalButton(
             onClick = {
                 onDismiss()
-                navController.navigate("link_computer")
+                navController.navigate("link_computer?scan=true") {
+                    launchSingleTop = true
+                }
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.listen_on_connect_button))
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(color = RetroTokens.BorderMuted)
+        ListenOnCastSection(onDismiss = onDismiss)
         Spacer(modifier = Modifier.height(24.dp))
         return
     }
@@ -236,53 +273,17 @@ fun ColumnScope.ListenOnSheet(
                 else -> stringResource(R.string.listen_on_tap_to_play_here)
             },
         iconRes = R.drawable.listen_on,
-        isActive = activeOnPhone && phoneHasMedia,
+        isActive = activeOnPhone,
         enabled = !isTransferring,
         onClick = {
-            if (activeOnPhone && phoneHasMedia) {
-                onDismiss()
-                return@ListenOnDeviceRow
-            }
-            if (!desktopHasMedia) {
-                Toast.makeText(context, R.string.listen_on_nothing_on_computer, Toast.LENGTH_SHORT).show()
-                return@ListenOnDeviceRow
-            }
-            val connection = playerConnection ?: return@ListenOnDeviceRow
-            isTransferring = true
-            Toast.makeText(context, switchingText, Toast.LENGTH_SHORT).show()
             lifecycleScope.launch {
-                val result =
-                    withContext(Dispatchers.IO) {
-                        runCatching {
-                            HandoffPlayback.continueFromDesktop(
-                                database = database,
-                                playerConnection = connection,
-                                endpointUrl = endpointUrl,
-                                token = token,
-                                personalLibraryCredentials = context.personalLibraryCredentials(),
-                            )
-                        }
-                    }
-                isTransferring = false
-                result
-                    .onSuccess { refreshedEndpoint ->
-                        if (refreshedEndpoint != endpointUrl.trim().trimEnd('/')) {
-                            context.dataStore.edit { settings ->
-                                settings[DesktopImportEndpointUrlKey] = refreshedEndpoint
-                            }
-                        }
-                        Toast.makeText(context, nowPlayingOnPhone, Toast.LENGTH_SHORT).show()
-                        playerBottomSheetState?.collapseSoft()
-                        onDismiss()
-                    }
-                    .onFailure { error ->
-                        Toast
-                            .makeText(
-                                context,
-                                error.message ?: failedText,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                    }
+                withContext(NonCancellable) {
+                    DeviceSessionManager.setPlaybackTarget("phone")
+                }
+                playbackTarget = "phone"
+                Toast.makeText(context, nowPlayingOnPhone, Toast.LENGTH_SHORT).show()
+                playerBottomSheetState?.collapseSoft()
+                onDismiss()
             }
         },
     )
@@ -290,36 +291,56 @@ fun ColumnScope.ListenOnSheet(
     Spacer(modifier = Modifier.height(8.dp))
 
     ListenOnDeviceRow(
-        title = stringResource(R.string.listen_on_this_computer),
+        title = computerTitle,
         subtitle =
             when {
-                !desktopReachable ->
+                playbackTarget == "computer" && remoteState.connected ->
+                    stringResource(R.string.listen_on_playing_here)
+                isRemoteReady && remoteState.connecting ->
+                    stringResource(R.string.listen_on_checking)
+                isRemoteReady && remoteState.errorMessage != null ->
+                    remoteState.errorMessage ?: stringResource(R.string.listen_on_computer_unreachable)
+                !desktopReachable && !isRemoteReady ->
                     desktopProbeError ?: stringResource(R.string.listen_on_computer_unreachable)
                 activeOnPhone && !desktopHasMedia -> stringResource(R.string.listen_on_computer_idle)
                 !activeOnPhone && desktopHasMedia -> stringResource(R.string.listen_on_playing_here)
                 desktopHasMedia -> stringResource(R.string.listen_on_ready)
                 phoneHasMedia -> stringResource(R.string.listen_on_handoff_to_computer)
+                isRemoteReady -> remoteReady
                 else -> stringResource(R.string.listen_on_tap_to_play_here)
             },
-        iconRes = R.drawable.sync,
-        isActive = !activeOnPhone && desktopHasMedia,
-        enabled = !isTransferring && desktopReachable,
+        iconRes = if (!activeOnPhone) R.drawable.cast_connected else R.drawable.cast,
+        isActive = !activeOnPhone,
+        enabled = !isTransferring && (desktopReachable || isRemoteReady),
         onClick = {
-            if (!activeOnPhone && desktopHasMedia) {
-                onDismiss()
-                return@ListenOnDeviceRow
-            }
-            if (!phoneHasMedia) {
-                Toast.makeText(context, R.string.listen_on_nothing_on_phone, Toast.LENGTH_SHORT).show()
-                return@ListenOnDeviceRow
-            }
-            if (!desktopReachable) {
+            if (!desktopReachable && !isRemoteReady) {
                 Toast
                     .makeText(
                         context,
                         desktopProbeError ?: context.getString(R.string.listen_on_computer_unreachable),
                         Toast.LENGTH_LONG,
                     ).show()
+                return@ListenOnDeviceRow
+            }
+            if (isRemoteReady) {
+                lifecycleScope.launch {
+                    playerConnection?.stopLocalPlayback()
+                    withContext(NonCancellable) {
+                        DeviceSessionManager.setPlaybackTarget("computer")
+                    }
+                    playbackTarget = "computer"
+                    Toast.makeText(context, nowPlayingOnComputer, Toast.LENGTH_SHORT).show()
+                    playerBottomSheetState?.collapseSoft()
+                    onDismiss()
+                }
+                return@ListenOnDeviceRow
+            } else if (!phoneHasMedia) {
+                Toast.makeText(context, R.string.listen_on_nothing_on_phone, Toast.LENGTH_SHORT).show()
+                return@ListenOnDeviceRow
+            }
+            if (!phoneHasMedia || desktopHasMedia || !desktopReachable) {
+                Toast.makeText(context, nowPlayingOnComputer, Toast.LENGTH_SHORT).show()
+                onDismiss()
                 return@ListenOnDeviceRow
             }
             val connection = playerConnection ?: return@ListenOnDeviceRow
@@ -339,12 +360,16 @@ fun ColumnScope.ListenOnSheet(
                 isTransferring = false
                 result
                     .onSuccess { refreshedEndpoint ->
-                        if (refreshedEndpoint != endpointUrl.trim().trimEnd('/')) {
-                            context.dataStore.edit { settings ->
-                                settings[DesktopImportEndpointUrlKey] = refreshedEndpoint
+                        withContext(NonCancellable) {
+                            if (refreshedEndpoint != endpointUrl.trim().trimEnd('/')) {
+                                context.dataStore.edit { settings ->
+                                    settings[DesktopImportEndpointUrlKey] = refreshedEndpoint
+                                }
                             }
+                            DeviceSessionManager.setPlaybackTarget("computer")
                         }
-                        connection.player.pause()
+                        playbackTarget = "computer"
+                        playerConnection?.stopLocalPlayback()
                         Toast.makeText(context, nowPlayingOnComputer, Toast.LENGTH_SHORT).show()
                         onDismiss()
                     }
@@ -374,6 +399,10 @@ fun ColumnScope.ListenOnSheet(
     HorizontalDivider(color = RetroTokens.BorderMuted)
     Spacer(modifier = Modifier.height(12.dp))
 
+    ListenOnCastSection(onDismiss = onDismiss)
+
+    Spacer(modifier = Modifier.height(12.dp))
+
     Text(
         text = stringResource(R.string.listen_on_manage_devices),
         style = MaterialTheme.typography.bodyMedium,
@@ -384,7 +413,9 @@ fun ColumnScope.ListenOnSheet(
                 .clip(RoundedCornerShape(8.dp))
                 .clickable {
                     onDismiss()
-                    navController.navigate("link_computer")
+                    navController.navigate("link_computer") {
+                        launchSingleTop = true
+                    }
                 }
                 .padding(vertical = 10.dp, horizontal = 4.dp),
     )

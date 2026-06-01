@@ -70,8 +70,7 @@ import com.metrolist.music.R
 import com.metrolist.music.constants.ListItemHeight
 import com.metrolist.music.constants.ListThumbnailSize
 import com.metrolist.music.constants.ThumbnailCornerRadius
-import com.metrolist.music.constants.DesktopImportEndpointUrlKey
-import com.metrolist.music.constants.DesktopImportTokenKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.desktopimport.DesktopImportClient
 import com.metrolist.music.desktopimport.DesktopImportTrack
 import com.metrolist.music.db.entities.SpeedDialItem
@@ -118,8 +117,7 @@ fun YouTubeSongMenu(
     val syncUtils = LocalSyncUtils.current
     val listenTogetherManager = LocalListenTogetherManager.current
     val isPinned by database.speedDialDao.isPinned(song.id).collectAsStateWithLifecycle(initialValue = false)
-    val desktopImportEndpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
-    val desktopImportToken by rememberPreference(DesktopImportTokenKey, "")
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
     val artists = remember {
         song.artists.mapNotNull {
             it.id?.let { artistId ->
@@ -291,7 +289,12 @@ fun YouTubeSongMenu(
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
-    val desktopImportQueuedText = stringResource(R.string.desktop_import_queued)
+    val desktopImportQueuedText =
+        if (sessionUi.computerName.isNotBlank()) {
+            stringResource(R.string.desktop_import_queued_named, sessionUi.computerName)
+        } else {
+            stringResource(R.string.desktop_import_queued)
+        }
     val isSavingDownload =
         download?.state == Download.STATE_QUEUED || download?.state == Download.STATE_DOWNLOADING
     val trackActions =
@@ -575,7 +578,8 @@ fun YouTubeSongMenu(
                                     )
                                 },
                                 onClick = {
-                                    if (desktopImportEndpointUrl.isBlank() || desktopImportToken.isBlank()) {
+                                    val bridge = DeviceSessionManager.bridgeEndpoint()
+                                    if (bridge == null) {
                                         Toast
                                             .makeText(
                                                 context,
@@ -583,9 +587,10 @@ fun YouTubeSongMenu(
                                                 Toast.LENGTH_SHORT,
                                             )
                                             .show()
-                                        navController.navigate("settings/integrations/desktop_import")
+                                        navController.navigate("link_computer")
                                         onDismiss()
                                     } else {
+                                        val (desktopImportEndpointUrl, desktopImportToken) = bridge
                                         coroutineScope.launch {
                                             val trackUrl =
                                                 song.shareLink.ifBlank {

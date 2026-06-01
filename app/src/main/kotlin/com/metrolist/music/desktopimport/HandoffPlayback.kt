@@ -13,6 +13,7 @@ import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.playback.queues.ListQueue
+import com.metrolist.music.playback.queues.Queue
 import com.metrolist.music.subsonic.PersonalLibraryCredentials
 import com.metrolist.music.subsonic.SUBSONIC_MEDIA_ID_PREFIX
 import com.metrolist.music.subsonic.SubsonicClient
@@ -23,6 +24,26 @@ import kotlinx.coroutines.withContext
 
 object HandoffPlayback {
     private val YOUTUBE_VIDEO_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
+
+    fun buildSnapshot(
+        status: Queue.Status,
+        playbackStatus: String = "playing",
+    ): HandoffSnapshot {
+        val nowPlaying = status.items.getOrNull(status.mediaItemIndex)?.metadata?.toHandoffTrack()
+        val queueTracks =
+            status.items
+                .mapIndexedNotNull { index, item ->
+                    if (index == status.mediaItemIndex) return@mapIndexedNotNull null
+                    item.metadata?.toHandoffTrack()
+                }.take(50)
+
+        return HandoffSnapshot(
+            positionMs = status.position.coerceAtLeast(0),
+            playbackStatus = playbackStatus,
+            nowPlaying = nowPlaying,
+            queue = queueTracks,
+        )
+    }
 
     fun buildSnapshot(playerConnection: PlayerConnection): HandoffSnapshot {
         val player = playerConnection.player

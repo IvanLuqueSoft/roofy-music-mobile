@@ -111,10 +111,12 @@ class SubsonicClient(
     suspend fun getAlbumList2(
         type: String,
         size: Int = 50,
+        offset: Int = 0,
     ): List<SubsonicAlbumRef> =
         request("getAlbumList2.view") {
             parameters.append("type", type)
-            parameters.append("size", size.coerceIn(1, 100).toString())
+            parameters.append("size", size.coerceIn(1, 500).toString())
+            parameters.append("offset", offset.coerceAtLeast(0).toString())
         }.response.ensureOk().albumList2?.album ?: emptyList()
 
     suspend fun getAlbum(id: String): SubsonicAlbumDetail =

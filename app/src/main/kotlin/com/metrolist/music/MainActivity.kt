@@ -1663,7 +1663,9 @@ class MainActivity : ComponentActivity() {
                 return@launch
             }
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@MainActivity, R.string.phone_link_paired, Toast.LENGTH_SHORT).show()
+                navController.navigate("link_computer/success") {
+                    launchSingleTop = true
+                }
             }
         }
 

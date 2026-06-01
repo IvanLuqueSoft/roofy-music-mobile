@@ -44,7 +44,15 @@ data class PersonalLibraryRatingSyncResult(
     val remoteRatings: Int,
 )
 
+data class PersonalLibraryCatalogSyncResult(
+    val importedSongs: Int,
+    val updatedSongs: Int,
+    val remoteAlbums: Int,
+    val remoteSongs: Int,
+)
+
 data class PersonalLibraryFullSyncResult(
+    val catalog: PersonalLibraryCatalogSyncResult,
     val favorites: PersonalLibraryFavoriteSyncResult,
     val history: PersonalLibraryHistorySyncResult,
     val playlists: PersonalLibraryPlaylistSyncResult,
@@ -52,6 +60,64 @@ data class PersonalLibraryFullSyncResult(
 )
 
 object PersonalLibrarySync {
+    private const val CATALOG_PAGE_SIZE = 500
+
+    suspend fun syncCatalog(
+        database: MusicDatabase,
+        client: SubsonicClient,
+    ): PersonalLibraryCatalogSyncResult =
+        withContext(Dispatchers.IO) {
+            val now = LocalDateTime.now()
+            val seenAlbumIds = mutableSetOf<String>()
+            val seenSongIds = mutableSetOf<String>()
+            var imported = 0
+            var updated = 0
+            var offset = 0
+
+            while (true) {
+                val albums =
+                    client.getAlbumList2(
+                        type = "alphabeticalByName",
+                        size = CATALOG_PAGE_SIZE,
+                        offset = offset,
+                    )
+                if (albums.isEmpty()) break
+
+                albums.forEach albumLoop@{ albumRef ->
+                    if (!seenAlbumIds.add(albumRef.id)) return@albumLoop
+
+                    runCatching { client.getAlbum(albumRef.id) }
+                        .getOrNull()
+                        ?.entry
+                        ?.forEach songLoop@{ song ->
+                            val metadata = song.toRoofyMetadata(client)
+                            if (!seenSongIds.add(metadata.id)) return@songLoop
+
+                            database.withTransaction {
+                                val existing = getSongByIdBlocking(metadata.id)
+                                if (existing == null) {
+                                    insert(metadata) { it.copy(inLibrary = now) }
+                                    imported += 1
+                                } else if (existing.song.inLibrary == null) {
+                                    update(existing.song.copy(inLibrary = now))
+                                    updated += 1
+                                }
+                            }
+                        }
+                }
+
+                if (albums.size < CATALOG_PAGE_SIZE) break
+                offset += CATALOG_PAGE_SIZE
+            }
+
+            PersonalLibraryCatalogSyncResult(
+                importedSongs = imported,
+                updatedSongs = updated,
+                remoteAlbums = seenAlbumIds.size,
+                remoteSongs = seenSongIds.size,
+            )
+        }
+
     suspend fun syncFavorites(
         database: MusicDatabase,
         client: SubsonicClient,
@@ -136,8 +202,18 @@ object PersonalLibrarySync {
                 val detailed = client.getPlaylist(remote.id)
                 val localId = subsonicPlaylistLocalId(remote.id)
                 val existing = localByRemoteId[remote.id]
+                val remoteSongIds = detailed.entry.map { SubsonicClient.mediaId(it.id) }
+                val currentSongIds =
+                    existing
+                        ?.let { playlist -> database.playlistSongsBlocking(playlist.id).map { it.song.id } }
+                        .orEmpty()
+                val playlistChanged =
+                    existing == null ||
+                        existing.name != detailed.name ||
+                        currentSongIds != remoteSongIds
 
-                database.withTransaction {
+                if (playlistChanged) {
+                    database.withTransaction {
                     val playlistEntity =
                         PlaylistEntity(
                             id = existing?.id ?: localId,
@@ -169,6 +245,7 @@ object PersonalLibrarySync {
                                 position = index,
                             ),
                         )
+                    }
                     }
                 }
             }
@@ -430,11 +507,13 @@ object PersonalLibrarySync {
         lastSyncedEpochMs: Long,
     ): PersonalLibraryFullSyncResult =
         withContext(Dispatchers.IO) {
+            val catalog = syncCatalog(database, client)
             val favorites = syncFavorites(database, client)
             val ratings = syncRatings(database, client)
             val playlists = syncPlaylists(database, client)
             val history = syncPlayHistory(database, client, lastSyncedEpochMs)
             PersonalLibraryFullSyncResult(
+                catalog = catalog,
                 favorites = favorites,
                 ratings = ratings,
                 playlists = playlists,

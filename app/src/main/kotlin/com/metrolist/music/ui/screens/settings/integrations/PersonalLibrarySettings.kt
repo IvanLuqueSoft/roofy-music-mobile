@@ -97,6 +97,8 @@ fun PersonalLibrarySettings(
     var historySyncDetailed by rememberSaveable { mutableStateOf("") }
     var historySyncEpochMs by rememberPreference(PersonalLibraryHistorySyncEpochMsKey, 0L)
     var syncingAll by rememberSaveable { mutableStateOf(false) }
+    var catalogSyncSummary by rememberSaveable { mutableStateOf("") }
+    var catalogSyncDetailed by rememberSaveable { mutableStateOf("") }
     var syncingRatings by rememberSaveable { mutableStateOf(false) }
     var ratingSyncSummary by rememberSaveable { mutableStateOf("") }
     var ratingSyncDetailed by rememberSaveable { mutableStateOf("") }
@@ -306,6 +308,8 @@ fun PersonalLibrarySettings(
                         syncingPlaylists = true
                         syncingHistory = true
                         syncingRatings = true
+                        catalogSyncSummary = ""
+                        catalogSyncDetailed = ""
                         favoriteSyncSummary = ""
                         favoriteSyncDetailed = ""
                         playlistSyncSummary = ""
@@ -337,11 +341,21 @@ fun PersonalLibrarySettings(
                             syncingRatings = false
                             result
                                 .onSuccess { syncResult ->
+                                    val catalog = syncResult.catalog
                                     val favorites = syncResult.favorites
                                     val ratings = syncResult.ratings
                                     val playlists = syncResult.playlists
                                     val history = syncResult.history
                                     historySyncEpochMs = history.lastSyncedEpochMs
+                                    catalogSyncDetailed = context.getString(
+                                        R.string.personal_library_sync_catalog_summary,
+                                        catalog.remoteAlbums,
+                                        catalog.remoteSongs,
+                                        catalog.importedSongs,
+                                        catalog.updatedSongs,
+                                    )
+                                    catalogSyncSummary =
+                                        context.getString(R.string.personal_library_sync_all_done)
                                     favoriteSyncDetailed = context.getString(
                                         R.string.personal_library_sync_summary,
                                         favorites.remoteFavorites,
@@ -393,6 +407,12 @@ fun PersonalLibrarySettings(
                         }
                     )
                 }
+
+                PersonalLibrarySyncSummaryLine(
+                    summary = catalogSyncSummary,
+                    detailed = catalogSyncDetailed,
+                    showDetails = showSyncDetails,
+                )
 
                 Text(
                     text = stringResource(R.string.personal_library_sync_ratings_desc),

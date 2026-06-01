@@ -28,6 +28,7 @@ import com.metrolist.kugou.KuGou
 import com.metrolist.lastfm.LastFM
 import com.metrolist.music.BuildConfig
 import com.metrolist.music.constants.*
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.di.ApplicationScope
 import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.extensions.toInetSocketAddress
@@ -87,6 +88,7 @@ class App :
         YtDlpStreamFallback.setContext(this)
 
         Timber.plant(Timber.DebugTree())
+        DeviceSessionManager.init(this)
 
         // Pre-read Coil cache size on background to avoid runBlocking in newImageLoader
         applicationScope.launch(Dispatchers.IO) {

@@ -37,11 +37,17 @@ class PairingUrlInteropTest {
     fun parseDevicePairQuery_acceptsDesktopStyleDeepLink() {
         val deepLink =
             "roofymusic://pair/device" +
-                "?serverUrl=http%3A%2F%2F192.168.1.10%3A4533" +
+                "?v=2" +
+                "&mode=lan" +
+                "&serverUrl=http%3A%2F%2F192.168.1.10%3A4533" +
                 "&username=roofy" +
                 "&password=secret" +
+                "&computerName=Studio+PC" +
                 "&endpointUrl=http%3A%2F%2F192.168.1.10%3A8765" +
-                "&token=import-token"
+                "&lanEndpointUrl=http%3A%2F%2F192.168.1.10%3A8765" +
+                "&token=import-token" +
+                "&remoteControlUrl=http%3A%2F%2F192.168.1.10%3A4333%2F%3Ftoken%3Dremote-token" +
+                "&remoteControlToken=remote-token"
 
         val params =
             RoofyPairingLinks.parseDevicePair(android.net.Uri.parse(deepLink))
@@ -49,7 +55,10 @@ class PairingUrlInteropTest {
         assertNotNull(params)
         assertEquals("http://192.168.1.10:4533", params!!.serverUrl)
         assertEquals("roofy", params.username)
+        assertEquals("Studio PC", params.computerName)
         assertEquals("import-token", params.token)
+        assertEquals("http://192.168.1.10:4333/?token=remote-token", params.remoteControlUrl)
+        assertEquals("remote-token", params.remoteControlToken)
     }
 
     @Test

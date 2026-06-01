@@ -64,6 +64,7 @@ object DesktopHandoffClient {
                         .Builder()
                         .url("${endpointUrl.normalizedBaseUrl()}/handoff/state")
                         .addHeader("Authorization", "Bearer ${token.trim()}")
+                        .addHeader("X-Roofy-Device-Name", DesktopConnect.deviceName)
                         .get()
                         .build()
 
@@ -99,6 +100,7 @@ object DesktopHandoffClient {
                         .url("${endpointUrl.normalizedBaseUrl()}/handoff/play")
                         .addHeader("Authorization", "Bearer ${token.trim()}")
                         .addHeader("Content-Type", "application/json")
+                        .addHeader("X-Roofy-Device-Name", DesktopConnect.deviceName)
                         .post(payload.toRequestBody(json))
                         .build()
 

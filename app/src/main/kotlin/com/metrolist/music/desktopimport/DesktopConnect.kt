@@ -6,6 +6,7 @@
 
 package com.metrolist.music.desktopimport
 
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -22,6 +23,12 @@ import java.util.concurrent.TimeUnit
  * endpoint when the desktop tunnel rotates, and surfaces friendly connection errors.
  */
 object DesktopConnect {
+    val deviceName: String
+        get() = listOf(Build.MANUFACTURER, Build.MODEL)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .replaceFirstChar { it.titlecase() }
+
     private val client =
         OkHttpClient
             .Builder()
@@ -42,6 +49,7 @@ object DesktopConnect {
                         .Builder()
                         .url("$normalized/health")
                         .addHeader("Authorization", "Bearer ${token.trim()}")
+                        .addHeader("X-Roofy-Device-Name", deviceName)
                         .get()
                         .build()
 

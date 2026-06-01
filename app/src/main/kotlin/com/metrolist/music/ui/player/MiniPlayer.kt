@@ -44,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableLongState
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -76,11 +78,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.constants.CropAlbumArtKey
 import com.metrolist.music.constants.MiniPlayerHeight
+import com.metrolist.music.desktopimport.DesktopRemoteClient
 import com.metrolist.music.constants.SwipeSensitivityKey
 import com.metrolist.music.constants.SwipeThumbnailKey
 import com.metrolist.music.db.entities.ArtistEntity
@@ -123,11 +129,24 @@ fun MiniPlayer(
 
     val playerConnection = LocalPlayerConnection.current ?: return
 
+    val remoteState by DeviceSessionManager.remoteState.collectAsStateWithLifecycle()
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+    val isComputerOutput = sessionUi.isComputerOutputSelected
+    val remoteTrack = remoteState.track
+
     // Player states - only collect what's needed at this level
     val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
+
+    LaunchedEffect(isComputerOutput, remoteState.positionMs, remoteTrack?.durationMs) {
+        if (isComputerOutput) {
+            positionState.longValue = remoteState.positionMs.coerceAtLeast(0L)
+            val remoteDuration = remoteTrack?.durationMs?.takeIf { it > 0L } ?: 0L
+            durationState.longValue = remoteDuration
+        }
+    }
 
     // Cast state - safely access castConnectionHandler to prevent crashes during service lifecycle changes
     val castHandler =
@@ -147,7 +166,7 @@ fun MiniPlayer(
     // Disable swipe for Listen Together guests
     val listenTogetherManager = com.metrolist.music.LocalListenTogetherManager.current
     val isListenTogetherGuest = listenTogetherManager?.let { it.isInRoom && !it.isHost } ?: false
-    val swipeThumbnail = swipeThumbnailPref && !isListenTogetherGuest
+    val swipeThumbnail = swipeThumbnailPref && !isListenTogetherGuest && !isComputerOutput
 
     val layoutDirection = LocalLayoutDirection.current
     val coroutineScope = rememberCoroutineScope()
@@ -282,17 +301,47 @@ fun MiniPlayer(
                         .background(RetroTokens.Background)
                         .border(1.dp, RetroTokens.BorderMuted, RoundedCornerShape(0.dp)),
                 ) {
-                    mediaMetadata?.let { metadata ->
+                    if (isComputerOutput) {
                         val thumbnailUrl =
-                            remember(metadata.thumbnailUrl) {
-                                metadata.thumbnailUrl?.resize(120, 120)
+                            remember(remoteTrack?.imageUrl) {
+                                remoteTrack?.imageUrl?.resize(120, 120)
                             }
-                        AsyncImage(
-                            model = thumbnailUrl,
-                            contentDescription = stringResource(R.string.album_cover_desc),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                        if (thumbnailUrl != null) {
+                            AsyncImage(
+                                model =
+                                    ImageRequest.Builder(LocalContext.current)
+                                        .data(thumbnailUrl)
+                                        .listener(
+                                            onError = { _: ImageRequest, _: ErrorResult ->
+                                                DesktopRemoteClient.requestArtworkProxy()
+                                            },
+                                        )
+                                        .build(),
+                                contentDescription = stringResource(R.string.album_cover_desc),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.cast_connected),
+                                contentDescription = null,
+                                tint = RetroTokens.Magenta,
+                                modifier = Modifier.size(22.dp).align(Alignment.Center),
+                            )
+                        }
+                    } else {
+                        mediaMetadata?.let { metadata ->
+                            val thumbnailUrl =
+                                remember(metadata.thumbnailUrl) {
+                                    metadata.thumbnailUrl?.resize(120, 120)
+                                }
+                            AsyncImage(
+                                model = thumbnailUrl,
+                                contentDescription = stringResource(R.string.album_cover_desc),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                 }
 
@@ -303,27 +352,85 @@ fun MiniPlayer(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    mediaMetadata?.let { metadata ->
+                    if (isComputerOutput) {
+                        val computerTitle =
+                            sessionUi.computerName.ifBlank {
+                                stringResource(R.string.listen_on_this_computer)
+                            }
                         Text(
-                            text = metadata.title,
+                            text = stringResource(R.string.listen_on_controlling_computer),
+                            color = primaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = remoteTrack?.title?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.listen_on_remote_ready),
                             color = onSurfaceColor,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             fontFamily = FontFamily.Monospace,
                             maxLines = 1,
                             overflow = TextOverflow.Clip,
-                            modifier = Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
+                            modifier =
+                                Modifier.basicMarquee(
+                                    iterations = 1,
+                                    initialDelayMillis = 3000,
+                                    velocity = 30.dp,
+                                ),
                         )
-                        if (metadata.artists.any { it.name.isNotBlank() }) {
+                        Text(
+                            text =
+                                remoteTrack?.artist?.takeIf { it.isNotBlank() }
+                                    ?: computerTitle,
+                            color = onSurfaceColor.copy(alpha = 0.7f),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                            modifier =
+                                Modifier.basicMarquee(
+                                    iterations = 1,
+                                    initialDelayMillis = 3000,
+                                    velocity = 30.dp,
+                                ),
+                        )
+                    } else {
+                        mediaMetadata?.let { metadata ->
                             Text(
-                                text = metadata.artists.joinToString { it.name },
-                                color = onSurfaceColor.copy(alpha = 0.7f),
-                                fontSize = 12.sp,
+                                text = metadata.title,
+                                color = onSurfaceColor,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
                                 fontFamily = FontFamily.Monospace,
                                 maxLines = 1,
                                 overflow = TextOverflow.Clip,
-                                modifier = Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
+                                modifier =
+                                    Modifier.basicMarquee(
+                                        iterations = 1,
+                                        initialDelayMillis = 3000,
+                                        velocity = 30.dp,
+                                    ),
                             )
+                            if (metadata.artists.any { it.name.isNotBlank() }) {
+                                Text(
+                                    text = metadata.artists.joinToString { it.name },
+                                    color = onSurfaceColor.copy(alpha = 0.7f),
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                    modifier =
+                                        Modifier.basicMarquee(
+                                            iterations = 1,
+                                            initialDelayMillis = 3000,
+                                            velocity = 30.dp,
+                                        ),
+                                )
+                            }
                         }
                     }
 
@@ -344,7 +451,12 @@ fun MiniPlayer(
                 // Square play/pause button (36dp)
                 val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
                 val castIsPlaying by castHandler?.castIsPlaying?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
-                val effectiveIsPlaying = if (isCasting) castIsPlaying else isPlaying
+                val effectiveIsPlaying =
+                    when {
+                        isComputerOutput -> remoteState.isPlaying
+                        isCasting -> castIsPlaying
+                        else -> isPlaying
+                    }
                 val isMuted by playerConnection.isMuted.collectAsStateWithLifecycle()
 
                 Box(
@@ -358,7 +470,12 @@ fun MiniPlayer(
                                 playerConnection.toggleMute()
                                 return@clickable
                             }
-                            if (isCasting) {
+                            if (isComputerOutput) {
+                                sessionUi.session?.let { session ->
+                                    DesktopRemoteClient.connect(session.remote.wsUrl, session.remote.token)
+                                }
+                                DesktopRemoteClient.togglePlayPause()
+                            } else if (isCasting) {
                                 if (castIsPlaying) castHandler?.pause() else castHandler?.play()
                             } else if (playbackState == Player.STATE_ENDED) {
                                 playerConnection.player.seekTo(0, 0)
@@ -400,16 +517,28 @@ fun MiniPlayer(
                         .size(36.dp)
                         .background(RetroTokens.Panel)
                         .border(1.dp, outlineColor, RoundedCornerShape(0.dp))
-                        .clickable(enabled = canSkipNext && !isListenTogetherGuest) {
+                        .clickable(enabled = (isComputerOutput || canSkipNext) && !isListenTogetherGuest) {
                             if (!isListenTogetherGuest) {
-                                playerConnection.seekToNext()
+                                if (isComputerOutput) {
+                                    sessionUi.session?.let { session ->
+                                        DesktopRemoteClient.connect(session.remote.wsUrl, session.remote.token)
+                                    }
+                                    DesktopRemoteClient.next()
+                                } else {
+                                    playerConnection.seekToNext()
+                                }
                             }
                         },
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.skip_next),
                         contentDescription = stringResource(R.string.next),
-                        tint = if (canSkipNext && !isListenTogetherGuest) RetroTokens.Text else RetroTokens.TextDim,
+                        tint =
+                            if ((isComputerOutput || canSkipNext) && !isListenTogetherGuest) {
+                                RetroTokens.Text
+                            } else {
+                                RetroTokens.TextDim
+                            },
                         modifier = Modifier.size(20.dp),
                     )
                 }

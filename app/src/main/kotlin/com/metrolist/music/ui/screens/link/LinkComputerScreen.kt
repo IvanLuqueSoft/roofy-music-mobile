@@ -29,8 +29,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -43,12 +47,13 @@ import com.google.zxing.integration.android.IntentIntegrator
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
 import com.metrolist.music.constants.PersonalLibraryServerUrlKey
-import com.metrolist.music.utils.dataStore
 import com.metrolist.music.pairing.PhoneLinkSetup
+import com.metrolist.music.pairing.RoofyPairingLinks
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.theme.RetroButton
 import com.metrolist.music.ui.theme.RetroSurface
 import com.metrolist.music.ui.utils.backToMain
+import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,6 +63,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun LinkComputerScreen(
     navController: NavController,
+    autoScan: Boolean = false,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -71,16 +77,24 @@ fun LinkComputerScreen(
             val scanResult = IntentIntegrator.parseActivityResult(result.resultCode, result.data)
             val contents = scanResult?.contents?.trim().orEmpty()
             if (contents.isBlank()) return@rememberLauncherForActivityResult
+            val pairingUri = contents.toUri()
+            val isDevicePairLink = RoofyPairingLinks.isDevicePairLink(pairingUri)
             coroutineScope.launch(Dispatchers.IO) {
                 val ok =
                     PhoneLinkSetup.applyPairingUri(
                         context = context,
                         dataStore = dataStore,
-                        uri = contents.toUri(),
+                        uri = pairingUri,
                     )
                 if (ok) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, R.string.phone_link_paired, Toast.LENGTH_SHORT).show()
+                        if (isDevicePairLink) {
+                            navController.navigate("link_computer/success") {
+                                launchSingleTop = true
+                            }
+                        } else {
+                            Toast.makeText(context, R.string.phone_link_paired, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -111,6 +125,25 @@ fun LinkComputerScreen(
             }
         }
 
+    fun startScan() {
+        val hasCamera =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        if (hasCamera) {
+            openScanner()
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    var autoScanConsumed by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(autoScan) {
+        if (autoScan && !autoScanConsumed) {
+            autoScanConsumed = true
+            startScan()
+        }
+    }
+
     Column(
         modifier = Modifier
             .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
@@ -136,16 +169,7 @@ fun LinkComputerScreen(
                 )
 
                 RetroButton(
-                    onClick = {
-                        val hasCamera =
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                                PackageManager.PERMISSION_GRANTED
-                        if (hasCamera) {
-                            openScanner()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    },
+                    onClick = ::startScan,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.phone_link_scan_qr))

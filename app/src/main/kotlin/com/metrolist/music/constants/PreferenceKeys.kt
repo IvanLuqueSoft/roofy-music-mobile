@@ -216,6 +216,10 @@ val PersonalLibraryHistorySyncEpochMsKey = longPreferencesKey("personalLibraryHi
 val DesktopImportEndpointUrlKey = stringPreferencesKey("desktopImportEndpointUrl")
 val DesktopImportTokenKey = stringPreferencesKey("desktopImportToken")
 val DesktopWebControlUrlKey = stringPreferencesKey("desktopWebControlUrl")
+val DesktopRemoteControlUrlKey = stringPreferencesKey("desktopRemoteControlUrl")
+val DesktopRemoteControlTokenKey = stringPreferencesKey("desktopRemoteControlToken")
+val DesktopComputerNameKey = stringPreferencesKey("desktopComputerName")
+val DevicePlaybackTargetKey = stringPreferencesKey("devicePlaybackTarget")
 
 val ChipSortTypeKey = stringPreferencesKey("chipSortType")
 val SongSortTypeKey = stringPreferencesKey("songSortType")

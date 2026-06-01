@@ -25,6 +25,9 @@ data class DevicePairingParams(
     val password: String,
     val endpointUrl: String,
     val token: String,
+    val computerName: String? = null,
+    val remoteControlUrl: String? = null,
+    val remoteControlToken: String? = null,
     val webControlUrl: String? = null,
 )
 
@@ -58,7 +61,7 @@ object RoofyPairingLinks {
         username: String?,
         password: String?,
     ): SubsonicPairingParams? {
-        val normalizedServerUrl = serverUrl?.trim().orEmpty()
+        val normalizedServerUrl = serverUrl?.trim().orEmpty().trimEnd('/')
         val normalizedUsername = username?.trim().orEmpty()
         val normalizedPassword = password.orEmpty()
         if (normalizedServerUrl.isBlank() || normalizedUsername.isBlank() || normalizedPassword.isBlank()) {
@@ -89,12 +92,28 @@ object RoofyPairingLinks {
                 token = uri.getQueryParameter("token"),
             ) ?: return null
         val webControlUrl = uri.getQueryParameter("webControlUrl")?.trim().orEmpty().ifBlank { null }
+        val computerName = uri.getQueryParameter("computerName")?.trim().orEmpty().ifBlank { null }
+        val remoteControlUrl =
+            uri
+                .getQueryParameter("remoteControlUrl")
+                ?.trim()
+                .orEmpty()
+                .ifBlank { webControlUrl }
+        val remoteControlToken =
+            uri
+                .getQueryParameter("remoteControlToken")
+                ?.trim()
+                .orEmpty()
+                .ifBlank { tokenFromUrl(remoteControlUrl) }
         return DevicePairingParams(
             serverUrl = subsonic.serverUrl,
             username = subsonic.username,
             password = subsonic.password,
             endpointUrl = import.endpointUrl,
             token = import.token,
+            computerName = computerName,
+            remoteControlUrl = remoteControlUrl,
+            remoteControlToken = remoteControlToken,
             webControlUrl = webControlUrl,
         )
     }
@@ -103,9 +122,16 @@ object RoofyPairingLinks {
         endpointUrl: String?,
         token: String?,
     ): ImportPairingParams? {
-        val normalizedEndpoint = endpointUrl?.trim().orEmpty()
+        val normalizedEndpoint = endpointUrl?.trim().orEmpty().trimEnd('/')
         val normalizedToken = token.orEmpty()
         if (normalizedEndpoint.isBlank() || normalizedToken.isBlank()) return null
         return ImportPairingParams(normalizedEndpoint, normalizedToken)
+    }
+
+    private fun tokenFromUrl(remoteUrl: String?): String? {
+        if (remoteUrl.isNullOrBlank()) return null
+        return runCatching {
+            Uri.parse(remoteUrl).getQueryParameter("token")?.trim().orEmpty().ifBlank { null }
+        }.getOrNull()
     }
 }

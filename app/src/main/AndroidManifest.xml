@@ -287,6 +287,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".subsonic.PersonalLibraryImportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Receiver for Listen Together notification actions (Approve/Reject) -->
         <receiver
             android:name=".listentogether.ListenTogetherActionReceiver"

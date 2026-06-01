@@ -15,96 +15,61 @@ import androidx.datastore.preferences.core.edit
 import com.metrolist.music.R
 import com.metrolist.music.constants.DesktopImportEndpointUrlKey
 import com.metrolist.music.constants.DesktopImportTokenKey
-import com.metrolist.music.constants.DesktopWebControlUrlKey
 import com.metrolist.music.constants.PersonalLibraryEnabledKey
 import com.metrolist.music.constants.PersonalLibraryPasswordKey
 import com.metrolist.music.constants.PersonalLibraryServerUrlKey
 import com.metrolist.music.constants.PersonalLibraryUsernameKey
+import com.metrolist.music.device.DeviceSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.metrolist.music.desktopimport.DesktopConnect
 
 object PhoneLinkSetup {
-    suspend fun applyDevicePair(
-        dataStore: DataStore<Preferences>,
-        params: DevicePairingParams,
-    ) {
-        dataStore.edit { settings ->
-            settings[PersonalLibraryEnabledKey] = true
-            settings[PersonalLibraryServerUrlKey] = params.serverUrl
-            settings[PersonalLibraryUsernameKey] = params.username
-            settings[PersonalLibraryPasswordKey] = params.password
-            settings[DesktopImportEndpointUrlKey] = params.endpointUrl
-            settings[DesktopImportTokenKey] = params.token
-            if (params.webControlUrl != null) {
-                settings[DesktopWebControlUrlKey] = params.webControlUrl
-            } else {
-                settings.remove(DesktopWebControlUrlKey)
-            }
-        }
-    }
-
     suspend fun applyPairingUri(
         context: Context,
         dataStore: DataStore<Preferences>,
         uri: Uri,
     ): Boolean {
-        val params =
-            when {
-                RoofyPairingLinks.isDevicePairLink(uri) -> RoofyPairingLinks.parseDevicePair(uri)
-                RoofyPairingLinks.isSubsonicPairLink(uri) -> {
-                    val subsonic = RoofyPairingLinks.parseSubsonicPair(uri) ?: return false
-                    dataStore.edit { settings ->
-                        settings[PersonalLibraryEnabledKey] = true
-                        settings[PersonalLibraryServerUrlKey] = subsonic.serverUrl
-                        settings[PersonalLibraryUsernameKey] = subsonic.username
-                        settings[PersonalLibraryPasswordKey] = subsonic.password
-                    }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, R.string.personal_library_paired, Toast.LENGTH_SHORT).show()
-                    }
-                    return true
+        when {
+            RoofyPairingLinks.isDevicePairLink(uri) -> {
+                val params = RoofyPairingLinks.parseDevicePair(uri) ?: return false
+                if (!DeviceSessionManager.applyDevicePair(params)) {
+                    return false
                 }
-                RoofyPairingLinks.isImportPairLink(uri) -> {
-                    val import = RoofyPairingLinks.parseImportPair(uri) ?: return false
-                    dataStore.edit { settings ->
-                        settings[DesktopImportEndpointUrlKey] = import.endpointUrl
-                        settings[DesktopImportTokenKey] = import.token
-                    }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, R.string.desktop_import_paired, Toast.LENGTH_SHORT).show()
-                    }
-                    return true
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.phone_link_paired, Toast.LENGTH_SHORT).show()
                 }
-                else -> null
-            } ?: return false
-
-        applyDevicePair(dataStore, params)
-        notifyDesktopPhonePaired(dataStore, params)
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, R.string.phone_link_paired, Toast.LENGTH_SHORT).show()
-        }
-        return true
-    }
-
-    private suspend fun notifyDesktopPhonePaired(
-        dataStore: DataStore<Preferences>,
-        params: DevicePairingParams,
-    ) {
-        val endpoint = params.endpointUrl.trim().trimEnd('/')
-        val token = params.token.trim()
-        if (endpoint.isBlank() || token.isBlank()) return
-
-        withContext(Dispatchers.IO) {
-            runCatching {
-                DesktopConnect.resolveLiveEndpoint(endpoint, token).getOrThrow()
-            }.onSuccess { liveEndpoint ->
-                if (liveEndpoint != endpoint) {
-                    dataStore.edit { settings ->
-                        settings[DesktopImportEndpointUrlKey] = liveEndpoint
-                    }
-                }
+                return true
             }
+            RoofyPairingLinks.isSubsonicPairLink(uri) -> {
+                val subsonic = RoofyPairingLinks.parseSubsonicPair(uri) ?: return false
+                dataStore.edit { settings ->
+                    settings[PersonalLibraryEnabledKey] = true
+                    settings[PersonalLibraryServerUrlKey] = subsonic.serverUrl
+                    settings[PersonalLibraryUsernameKey] = subsonic.username
+                    settings[PersonalLibraryPasswordKey] = subsonic.password
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.personal_library_paired, Toast.LENGTH_SHORT).show()
+                }
+                return true
+            }
+            RoofyPairingLinks.isImportPairLink(uri) -> {
+                val import = RoofyPairingLinks.parseImportPair(uri) ?: return false
+                dataStore.edit { settings ->
+                    settings[DesktopImportEndpointUrlKey] = import.endpointUrl
+                    settings[DesktopImportTokenKey] = import.token
+                }
+                withContext(Dispatchers.Main) {
+                    Toast
+                        .makeText(
+                            context,
+                            R.string.desktop_import_paired,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                }
+                return true
+            }
+            else -> return false
         }
     }
 }

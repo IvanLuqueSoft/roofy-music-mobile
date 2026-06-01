@@ -42,9 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.constants.DesktopImportEndpointUrlKey
 import com.metrolist.music.constants.DesktopImportTokenKey
 import com.metrolist.music.desktopimport.DesktopConnect
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.utils.dataStore
 import androidx.datastore.preferences.core.edit
 import com.metrolist.music.productux.UserFacingErrors
@@ -63,6 +65,7 @@ fun DesktopImportSettings(
     val context = LocalContext.current
     val dataStore = context.dataStore
     val coroutineScope = rememberCoroutineScope()
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
     var endpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
     var token by rememberPreference(DesktopImportTokenKey, "")
     var testing by rememberSaveable { mutableStateOf(false) }
@@ -117,11 +120,35 @@ fun DesktopImportSettings(
                         Text(stringResource(R.string.phone_link_scan_qr))
                     }
                 } else {
+                    if (sessionUi.computerName.isNotBlank()) {
+                        Text(
+                            text = stringResource(R.string.phone_link_connected_to, sessionUi.computerName),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                     Text(
                         text = connectedMessage,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    RetroButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                DeviceSessionManager.forgetSession()
+                                endpointUrl = ""
+                                token = ""
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.listen_on_forget_computer))
+                    }
+                    RetroButton(
+                        onClick = { navController.navigate("link_computer") },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.phone_link_scan_qr))
+                    }
                 }
 
                 if (!manualSetupOpen && endpointUrl.isBlank()) {

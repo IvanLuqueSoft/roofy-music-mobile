@@ -23,8 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.metrolist.music.R
-import com.metrolist.music.constants.DesktopImportEndpointUrlKey
-import com.metrolist.music.constants.DesktopImportTokenKey
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.ui.component.BottomSheetState
 import com.metrolist.music.ui.component.LocalMenuState
 import com.metrolist.music.utils.rememberPreference
@@ -37,16 +37,16 @@ fun ListenOnButton(
     playerBottomSheetState: BottomSheetState? = null,
 ) {
     val menuState = LocalMenuState.current
-    val endpointUrl by rememberPreference(DesktopImportEndpointUrlKey, "")
-    val token by rememberPreference(DesktopImportTokenKey, "")
-    val isPaired = endpointUrl.isNotBlank() && token.isNotBlank()
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
+    val isPaired = sessionUi.isPaired
+    val isControllingComputer = sessionUi.playbackTarget == "computer"
 
     Box(
         modifier =
             modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(tintColor.copy(alpha = 0.18f))
+                .background(tintColor.copy(alpha = if (isControllingComputer) 0.32f else 0.18f))
                 .clickable {
                     menuState.show {
                         ListenOnSheet(
@@ -59,9 +59,16 @@ fun ListenOnButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            painter = painterResource(R.drawable.listen_on),
+            painter = painterResource(if (isControllingComputer) R.drawable.cast_connected else R.drawable.cast),
             contentDescription = stringResource(R.string.listen_on_title),
-            tint = if (isPaired) tintColor else tintColor.copy(alpha = 0.65f),
+            tint =
+                if (isControllingComputer) {
+                    tintColor
+                } else if (isPaired) {
+                    tintColor.copy(alpha = 0.85f)
+                } else {
+                    tintColor.copy(alpha = 0.65f)
+                },
             modifier = Modifier.size(22.dp),
         )
     }

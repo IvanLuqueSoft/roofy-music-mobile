@@ -6,8 +6,6 @@
 
 package com.metrolist.music.ui.screens.link
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +39,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.edit
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
-import com.metrolist.music.constants.DesktopWebControlUrlKey
+import com.metrolist.music.device.DeviceSessionManager
 import com.metrolist.music.constants.PersonalLibraryHistorySyncEpochMsKey
 import com.metrolist.music.constants.PersonalLibraryEnabledKey
 import com.metrolist.music.constants.PersonalLibraryPasswordKey
@@ -57,6 +57,7 @@ import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.theme.RetroButton
 import com.metrolist.music.ui.theme.RetroSurface
 import com.metrolist.music.ui.utils.backToMain
+import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -79,22 +80,13 @@ fun LinkComputerSuccessScreen(
     val serverUrl by rememberPreference(PersonalLibraryServerUrlKey, "")
     val username by rememberPreference(PersonalLibraryUsernameKey, "")
     val password by rememberPreference(PersonalLibraryPasswordKey, "")
-    val webControlUrl by rememberPreference(DesktopWebControlUrlKey, "")
+    val sessionUi by DeviceSessionManager.uiState.collectAsStateWithLifecycle()
     var historySyncEpochMs by rememberPreference(PersonalLibraryHistorySyncEpochMsKey, 0L)
     var syncing by rememberSaveable { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf(DesktopConnectMode.SYNC_LIBRARY) }
 
     fun finish() {
         navController.navigateUp()
-    }
-
-    fun openWebControl() {
-        val url = webControlUrl.trim()
-        if (url.isBlank()) {
-            Toast.makeText(context, R.string.phone_link_web_control_unavailable, Toast.LENGTH_LONG).show()
-            return
-        }
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
     fun continueWithMode() {
@@ -130,7 +122,7 @@ fun LinkComputerSuccessScreen(
                         .onSuccess {
                             Toast.makeText(
                                 context,
-                                R.string.phone_link_sync_started,
+                                R.string.personal_library_sync_all_done,
                                 Toast.LENGTH_SHORT,
                             ).show()
                             finish()
@@ -146,8 +138,18 @@ fun LinkComputerSuccessScreen(
             }
             DesktopConnectMode.CONTROL_ONLY -> {
                 enabled = false
-                openWebControl()
-                finish()
+                coroutineScope.launch {
+                    context.dataStore.edit { settings ->
+                        settings[PersonalLibraryEnabledKey] = false
+                    }
+                    if (sessionUi.session?.remote?.wsUrl?.isNotBlank() == true) {
+                        DeviceSessionManager.setPlaybackTarget("computer")
+                        Toast.makeText(context, R.string.phone_link_remote_ready, Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, R.string.phone_link_remote_unavailable, Toast.LENGTH_LONG).show()
+                    }
+                    finish()
+                }
             }
         }
     }

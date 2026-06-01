@@ -405,8 +405,20 @@ fun NavGraphBuilder.navigationBuilder(
         LastFMSettings(navController)
     }
 
-    composable("link_computer") {
-        LinkComputerScreen(navController)
+    composable(
+        route = "link_computer?scan={scan}",
+        arguments =
+            listOf(
+                navArgument("scan") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+    ) { backStackEntry ->
+        LinkComputerScreen(
+            navController = navController,
+            autoScan = backStackEntry.arguments?.getBoolean("scan") == true,
+        )
     }
 
     composable("link_computer/success") {
